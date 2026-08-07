@@ -2,6 +2,7 @@ import { VIEW } from './game/constants.js';
 import { Game } from './game/game.js';
 import { Input } from './engine/input.js';
 import { Loop } from './engine/loop.js';
+import { buildOpening, openingOnStart, OPENING_STARTING_ABILITIES } from './game/levels/opening.js';
 
 // Bootstraps the canvas, wires up scaling, and starts the loop.
 //
@@ -40,7 +41,20 @@ const loop = new Loop({
   render: () => game.render(),
 });
 
-const game = new Game(ctx, input, loop);
+const game = new Game(ctx, input, loop, {
+  levelFactory: buildOpening,
+  startingAbilities: OPENING_STARTING_ABILITIES,
+  onStart: openingOnStart,
+  title: '焦土台灣',
+  subtitle: '第一章：甦醒',
+  titleHints: [
+    'MOVE      A D  /  arrows',
+    'JUMP      SPACE  /  K',
+    'TALK      E          (approach a person)',
+    '',
+    '（射擊與衝刺，將在劇情中逐步解鎖）',
+  ],
+});
 
 // Audio contexts must be created inside a user gesture; the title screen also
 // unlocks on its own, this covers clicking the canvas directly.
@@ -51,9 +65,7 @@ window.addEventListener('keydown', unlock, { once: true });
 // Pausing on tab blur avoids the player returning to a corpse because enemies
 // kept moving. The fixed-step loop already clamps huge deltas, but this is the
 // behaviour a player expects.
-window.addEventListener('blur', () => {
-  if (game.state === 'playing') game.state = 'paused';
-});
+window.addEventListener('blur', () => game.pauseIfPlaying());
 
 loop.start();
 

@@ -1,8 +1,44 @@
 import { PLAYER, COLORS, VIEW } from './constants.js';
 import { clamp } from '../engine/math.js';
 
-// Screen-space overlay. Drawn after the camera transform is popped, so nothing
-// here is affected by scrolling or screen shake.
+// A single stack used everywhere overlay text is drawn: monospace first (the
+// game's usual techy HUD look, and the only font Latin text needs), with CJK
+// fonts as fallbacks. Modern canvas text rendering resolves font fallback per
+// character, so English HUD strings render in monospace exactly as before
+// while any Traditional Chinese in a title or ending screen (which monospace
+// fonts typically do not cover, or cover with a mismatched fallback glyph)
+// picks up a proper CJK face automatically - no per-call font juggling needed.
+export const UI_FONT = 'monospace, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+
+// Shared drawing primitives for full-screen overlay scenes (pause/death/win).
+// Exported as plain functions rather than HUD methods so PauseScene,
+// DeathScene, WinScene and EndingScene can each compose their own screen
+// without needing a stateful HUD instance for what is really just "dim the
+// screen and print a few centred lines".
+export function drawOverlay(ctx, alpha = 0.68) {
+  ctx.fillStyle = `rgba(6,8,16,${alpha})`;
+  ctx.fillRect(0, 0, VIEW.width, VIEW.height);
+}
+
+export function drawTitle(ctx, text, y, size = 20, color = '#eaf3ff') {
+  ctx.font = `${size}px ${UI_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = color;
+  ctx.fillText(text, VIEW.width / 2, y);
+}
+
+export function drawLine(ctx, text, y, color = '#8fa7d8', size = 9) {
+  ctx.font = `${size}px ${UI_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = color;
+  ctx.fillText(text, VIEW.width / 2, y);
+}
+
+// The persistent gameplay chrome: health, dash meter, level progress, score
+// and the transient message banner. Drawn every frame WorldScene is visible
+// with showHud on - which is every state except the title screen - so it
+// shows dimmed behind a pause menu or a dialogue box exactly as a player would
+// expect, rather than disappearing and reappearing.
 export class HUD {
   constructor() {
     this.messageText = '';
@@ -20,6 +56,7 @@ export class HUD {
 
   render(ctx, game) {
     const p = game.player;
+    if (!p) return;
 
     this._health(ctx, p);
     this._dash(ctx, p);
@@ -27,9 +64,6 @@ export class HUD {
     this._score(ctx, game);
 
     if (this.messageT > 0) this._message(ctx);
-    if (game.state === 'paused') this._pause(ctx);
-    if (game.state === 'dead') this._dead(ctx, game);
-    if (game.state === 'won') this._won(ctx, game);
     if (game.showDebug) this._debug(ctx, game);
   }
 
@@ -125,53 +159,6 @@ export class HUD {
     ctx.globalAlpha = 1;
   }
 
-  _overlay(ctx, alpha = 0.68) {
-    ctx.fillStyle = `rgba(6,8,16,${alpha})`;
-    ctx.fillRect(0, 0, VIEW.width, VIEW.height);
-  }
-
-  _title(ctx, text, y, size = 20, color = '#eaf3ff') {
-    ctx.font = `${size}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = color;
-    ctx.fillText(text, VIEW.width / 2, y);
-  }
-
-  _line(ctx, text, y, color = '#8fa7d8', size = 9) {
-    ctx.font = `${size}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = color;
-    ctx.fillText(text, VIEW.width / 2, y);
-  }
-
-  _pause(ctx) {
-    this._overlay(ctx);
-    this._title(ctx, 'PAUSED', 130);
-    this._line(ctx, 'ESC / P  resume', 164);
-    this._line(ctx, 'R  restart from checkpoint', 180);
-    this._line(ctx, 'M  toggle sound', 196);
-    this._line(ctx, '', 210);
-    this._line(ctx, 'MOVE  A D / arrows      JUMP  SPACE / K', 226, '#6a7ea8', 8);
-    this._line(ctx, 'FIRE  J / Z             DASH  SHIFT / L', 240, '#6a7ea8', 8);
-    this._line(ctx, 'aim up or down while firing', 254, '#55688f', 8);
-  }
-
-  _dead(ctx, game) {
-    this._overlay(ctx, 0.55);
-    this._title(ctx, 'YOU DIED', 140, 20, '#ff8fa8');
-    this._line(ctx, `deaths: ${game.deaths}`, 170);
-    this._line(ctx, 'press R to respawn at the last checkpoint', 192, '#c8d8f8');
-  }
-
-  _won(ctx, game) {
-    this._overlay(ctx, 0.6);
-    this._title(ctx, 'ESCAPED', 128, 22, '#9af0ff');
-    this._line(ctx, `score  ${game.score}`, 158, '#eaf3ff');
-    this._line(ctx, `deaths ${game.deaths}`, 174);
-    this._line(ctx, `time   ${game.elapsed.toFixed(1)}s`, 190);
-    this._line(ctx, 'press R to play again', 216, '#c8d8f8');
-  }
-
   _debug(ctx, game) {
     const p = game.player;
     const lines = [
@@ -181,11 +168,12 @@ export class HUD {
       `grnd  ${p.grounded}  wall ${p.body.wallLeft ? 'L' : ''}${p.body.wallRight ? 'R' : ''}`,
       `dash  ${p.dashT.toFixed(2)} cd ${Math.max(0, p.dashCd).toFixed(2)}`,
       `ents  e:${game.enemies.length} b:${game.bullets.length} p:${game.particles.activeCount}`,
+      `abil  fire:${p.abilities.fire ? 1 : 0} dash:${p.abilities.dash ? 1 : 0} djmp:${p.abilities.doubleJump ? 1 : 0} wall:${p.abilities.wallJump ? 1 : 0}`,
     ];
     ctx.font = '8px monospace';
     ctx.textAlign = 'left';
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(8, VIEW.height - 8 - lines.length * 10, 150, lines.length * 10 + 4);
+    ctx.fillRect(8, VIEW.height - 8 - lines.length * 10, 190, lines.length * 10 + 4);
     ctx.fillStyle = '#8ff0a8';
     lines.forEach((l, i) => {
       ctx.fillText(l, 12, VIEW.height - 12 - (lines.length - 1 - i) * 10);

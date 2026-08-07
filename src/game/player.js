@@ -11,6 +11,13 @@ import {
   animTimeScale,
 } from './player-anims.js';
 
+// Used only when `game.story` is absent (every existing test constructs a
+// Player this way via the harness's stubGame()). A level with no story layer
+// - level1, and every test - gets the full moveset from frame one, exactly as
+// before ability gating existed. Only a real Game wired to a StoryState can
+// restrict this, by unlocking abilities one at a time as the story progresses.
+const FULL_ABILITIES = { fire: true, dash: true, doubleJump: true, wallJump: true };
+
 // Shared by every Player instance. Loading is asynchronous and non-blocking;
 // until it finishes (or if it fails) the procedural art is drawn instead.
 const playerSheet = new SpriteSheet({
@@ -74,6 +81,13 @@ export class Player {
 
   get invulnerable() {
     return this.invuln > 0 || this.dashT > 0;
+  }
+
+  // Read live from story state every time rather than cached at construction,
+  // so an ability granted mid-scene (a cutscene finishing, a pickup) takes
+  // effect on the very next frame instead of needing a respawn to pick it up.
+  get abilities() {
+    return this.game.story ? this.game.story.abilities : FULL_ABILITIES;
   }
 
   update(dt, input, map) {
@@ -172,7 +186,11 @@ export class Player {
     const touching =
       (b.wallLeft && wantX < 0) || (b.wallRight && wantX > 0);
 
-    this.wallSliding = !b.grounded && touching && b.vy > 0;
+    // Without the ability, a wall is just a wall: it blocks movement, but does
+    // not slow the fall or refund jumps. Sliding down it at 1/4 speed before
+    // the story has explained why would look like a bug, not a held-back
+    // reward.
+    this.wallSliding = this.abilities.wallJump && !b.grounded && touching && b.vy > 0;
 
     if (this.wallSliding) {
       this.wallStick = PLAYER.wallStickTime;
@@ -204,6 +222,7 @@ export class Player {
       // Wall jump takes priority: pushing off a wall is what the player means
       // when they hit jump while sliding.
       const canWallJump =
+        this.abilities.wallJump &&
         !b.grounded && (this.wallSliding || this.wallStick > 0) &&
         (b.wallLeft || b.wallRight);
 
@@ -225,7 +244,7 @@ export class Player {
         b.grounded = false;
         this._jumpFx(1);
         this.game.audio.jump();
-      } else if (this.airJumps > 0) {
+      } else if (this.abilities.doubleJump && this.airJumps > 0) {
         b.vy = -PLAYER.jumpVelocity * 0.92;
         this.airJumps--;
         this.jumpBufferT = 0;
@@ -268,7 +287,7 @@ export class Player {
   }
 
   _handleDash(dt, input) {
-    if (input.pressed('dash') && this.hasDash && this.dashCd <= 0) {
+    if (this.abilities.dash && input.pressed('dash') && this.hasDash && this.dashCd <= 0) {
       let dx = input.axisX;
       let dy = input.axisY;
       // No direction held means dash the way you are facing.
@@ -319,7 +338,7 @@ export class Player {
   }
 
   _handleFire(dt, input) {
-    if (!input.down('fire') || this.fireCd > 0) return;
+    if (!this.abilities.fire || !input.down('fire') || this.fireCd > 0) return;
     this.fireCd = PLAYER.fireRate;
 
     // Aim: up/down override horizontal, matching twin-stick-lite conventions.

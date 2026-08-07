@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "start": "node serve.js",
-    "test": "node test/level.test.mjs && node test/player.test.mjs && node test/anim.test.mjs",
+    "test": "for f in test/*.test.mjs; do node \"$f\" || exit 1; done",
     "art": "node tools/make-spritesheet.mjs",
     "test:browser": "node test/smoke.browser.mjs"
   },

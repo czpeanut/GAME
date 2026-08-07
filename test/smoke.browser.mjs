@@ -68,31 +68,70 @@ console.log('\nboot');
 check('game object is exposed', await page.evaluate(() => !!window.game));
 check('starts on the title screen', (await page.evaluate(() => window.game.state)) === 'title');
 
-// Start playing.
+// Start playing. The default game (main.js) opens on a story chapter whose
+// wake-up beat is a cutscene that locks input until dismissed - press confirm
+// a generous number of times to clear it before anything below assumes the
+// player can move. A plain arcade level with no intro would just no-op these
+// extra presses on an already-idle title/world, so this is safe either way.
 await page.keyboard.press('Space');
-await page.waitForTimeout(400);
+await page.waitForTimeout(2500); // covers the wake-up fade-in
+for (let i = 0; i < 15; i++) {
+  const top = await page.evaluate(() => window.game.scenes.top.constructor.name);
+  if (top === 'WorldScene') break;
+  await page.keyboard.press('KeyJ');
+  await page.waitForTimeout(150);
+}
 check('space starts the game', (await page.evaluate(() => window.game.state)) === 'playing');
 
 console.log('\nmovement and combat');
 // Run far enough right to leave the camera's dead zone and the level's left
-// clamp - near the spawn the camera is *supposed* to stay put.
-await page.keyboard.down('KeyD');
-await page.waitForTimeout(2000);
-const moved = await page.evaluate(() => ({
-  x: window.game.player.x,
-  cam: window.game.camera.x,
-}));
-check('player moves right', moved.x > 400, `x=${moved.x.toFixed(0)}`);
-check('camera scrolls with the player', moved.cam > 0, `camX=${moved.cam.toFixed(0)}`);
+// clamp - near the spawn the camera is *supposed* to stay put. A story level
+// can have a narrative trigger along the way that opens a dialogue and
+// blocks movement until dismissed (the default game does, right after
+// spawn), so this dismisses anything that pops up rather than assuming a
+// single blind hold of the movement key reaches the target distance.
+async function walkRightUntil(targetX, maxSteps = 30) {
+  for (let i = 0; i < maxSteps; i++) {
+    const top = await page.evaluate(() => window.game.scenes.top.constructor.name);
+    if (top === 'DialogueScene') {
+      await page.keyboard.press('KeyJ');
+      await page.waitForTimeout(100);
+      continue;
+    }
+    const x = await page.evaluate(() => window.game.player.x);
+    if (x > targetX) return x;
+    await page.keyboard.down('KeyD');
+    await page.waitForTimeout(150);
+  }
+  await page.keyboard.up('KeyD');
+  return page.evaluate(() => window.game.player.x);
+}
+
+const reachedX = await walkRightUntil(400);
+await page.keyboard.up('KeyD');
+const cam = await page.evaluate(() => window.game.camera.x);
+check('player moves right', reachedX > 400, `x=${reachedX.toFixed(0)}`);
+check('camera scrolls with the player', cam > 0, `camX=${cam.toFixed(0)}`);
+
+// Fire and dash may be gated by story progression in the default game (they
+// are here). This checks the mechanism itself works when enabled, the same
+// way a fresh save eventually enables it - the pacing of *when* that happens
+// is the story content's job to test (test/opening.test.mjs), not this one's.
+await page.evaluate(() => {
+  window.game.story.grantAbility('fire');
+  window.game.story.grantAbility('dash');
+});
 
 await page.keyboard.down('KeyJ');
 await page.waitForTimeout(400);
 check('firing spawns bullets', await page.evaluate(() => window.game.bullets.length >= 0));
 await page.keyboard.up('KeyJ');
 
+await page.keyboard.down('KeyD');
+await page.waitForTimeout(80);
 await page.keyboard.press('ShiftLeft');
 await page.waitForTimeout(80);
-check('dash activates', await page.evaluate(() => window.game.player.dashT > 0));
+check('dash activates once granted', await page.evaluate(() => window.game.player.dashT > 0));
 await page.waitForTimeout(400);
 await page.keyboard.up('KeyD');
 

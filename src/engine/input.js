@@ -22,6 +22,7 @@ const KEY_MAP = {
   KeyK: 'jump',
   KeyJ: 'fire',
   KeyZ: 'fire',
+  KeyE: 'interact',
   KeyL: 'dash',
   ShiftLeft: 'dash',
   ShiftRight: 'dash',
@@ -37,6 +38,7 @@ const PAD_MAP = {
   0: 'jump', // A
   1: 'dash', // B
   2: 'fire', // X
+  3: 'interact', // Y
   5: 'dash', // RB
   7: 'fire', // RT
   9: 'pause', // Start

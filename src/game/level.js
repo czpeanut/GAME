@@ -12,6 +12,8 @@ export class LevelBuilder {
     this.spawns = [];
     this.checkpoints = [];
     this.pickups = [];
+    this.triggers = [];
+    this.npcs = [];
     this.goal = null;
     this.playerStart = { col: 2, row: 2 };
   }
@@ -68,12 +70,41 @@ export class LevelBuilder {
     return this;
   }
 
+  // A rectangular story beat: fires `onEnter(world, game)` when the player
+  // enters the tile rectangle [c0,r0]-[c1,r1]. See StoryTrigger for the
+  // once/flag options - passed straight through via `opts`.
+  storyTrigger(c0, r0, c1, r1, opts = {}) {
+    this.triggers.push({
+      x: c0 * TILE,
+      y: r0 * TILE,
+      w: (c1 - c0 + 1) * TILE,
+      h: (r1 - r0 + 1) * TILE,
+      ...opts,
+    });
+    return this;
+  }
+
+  // A stationary figure the player can approach and press E to talk to. `row`
+  // names the top of a 2-tile opening, the same convention `start()` and
+  // `checkpoint()` use, so an NPC and the player standing next to it line up
+  // on the same floor.
+  npc(col, row, opts = {}) {
+    this.npcs.push({
+      x: col * TILE,
+      y: (row + 2) * TILE - (opts.h ?? PLAYER.h),
+      ...opts,
+    });
+    return this;
+  }
+
   build(name) {
     return {
       name,
       map: new Tilemap(this.grid),
       spawns: this.spawns,
       checkpoints: this.checkpoints,
+      triggers: this.triggers,
+      npcs: this.npcs,
       goal: this.goal,
       // Start rows name the top of a 2-tile-tall opening, the same convention
       // checkpoints use. The player is shorter than that opening, so drop them
