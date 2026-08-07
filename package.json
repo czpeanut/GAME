@@ -1,0 +1,17 @@
+{
+  "name": "hollow-runner",
+  "version": "1.0.0",
+  "description": "A 2D action shooter with fluid platforming and scrolling levels, built on HTML5 Canvas with no runtime dependencies.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node serve.js",
+    "test": "node test/level.test.mjs && node test/player.test.mjs",
+    "test:browser": "node test/smoke.browser.mjs"
+  },
+  "keywords": ["game", "platformer", "canvas", "2d", "shooter"],
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

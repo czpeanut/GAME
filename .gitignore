@@ -1,0 +1,6 @@
+node_modules/
+package-lock.json
+*.log
+
+# scratch files from local debugging
+.*.tmp.mjs
