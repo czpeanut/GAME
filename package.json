@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "node serve.js",
-    "test": "node test/level.test.mjs && node test/player.test.mjs",
+    "test": "node test/level.test.mjs && node test/player.test.mjs && node test/anim.test.mjs",
+    "art": "node tools/make-spritesheet.mjs",
     "test:browser": "node test/smoke.browser.mjs"
   },
   "keywords": ["game", "platformer", "canvas", "2d", "shooter"],

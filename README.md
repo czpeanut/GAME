@@ -56,6 +56,11 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 ```
 index.html            版面與 canvas 容器
 serve.js              零相依靜態伺服器（開發用）
+assets/
+  player.png          角色 sprite sheet（由 tools/ 產生，可自行替換）
+tools/
+  png.mjs             自製 PNG 編碼器與像素畫布（僅用 node:zlib）
+  make-spritesheet.mjs 產生 assets/player.png
 src/
   main.js             進入點：畫布縮放、事件綁定、啟動迴圈
   engine/             與遊戲內容無關的通用層
@@ -64,12 +69,15 @@ src/
     camera.js         死區、預看、邊界夾制、震動
     particles.js      物件池粒子系統（避免 GC 卡頓）
     audio.js          WebAudio 即時合成音效
+    sprites.js        Sprite sheet 載入與單格繪製
+    animator.js       動畫幀計時（不依賴 DOM）
     tilemap.js        圖磚網格與碰撞查詢
     math.js           數學工具
   game/
     constants.js      所有手感與數值調校參數
     body.js           AABB 移動體與圖磚碰撞解析
     player.js         玩家控制器
+    player-anims.js   Sprite 版面定義與動畫狀態選擇（純函式）
     enemy.js          敵人：Walker / Flyer / Turret
     bullet.js         彈丸
     level.js          關卡建構 API 與第一關內容
@@ -90,6 +98,57 @@ test/                 測試
   確保不會穿透牆面。
 - **粒子物件池**：粒子從固定大小的池中重複使用，激烈戰鬥時不會觸發 GC 停頓。
 - **視野裁切**：地圖有 4350 格圖磚，每幀只繪製鏡頭範圍內的部分。
+
+## 角色美術（Sprite Sheet）
+
+角色使用 sprite sheet 繪製，圖檔在 `assets/player.png`。
+
+**版面**：6 欄 × 7 列，每格 32 × 40 px（192 × 280 px）。列的順序**必須**與
+`src/game/player-anims.js` 的 `ANIMS` 一致：
+
+| 列 | 動畫 | 幀數 | fps |
+| --- | --- | --- | --- |
+| 0 | idle | 4 | 6 |
+| 1 | run | 6 | 14 |
+| 2 | jump | 2 | 10 |
+| 3 | fall | 2 | 10 |
+| 4 | dash | 2 | 18 |
+| 5 | wall | 2 | 8 |
+| 6 | hurt | 2 | 12 |
+
+圖片朝向**右**，向左時由程式水平翻轉，不需另外畫。角色腳底對齊格子最底列。
+
+### 換成你自己的圖
+
+直接覆蓋 `assets/player.png` 即可，只要維持同樣的格子尺寸與列順序。
+想改格子大小就同步改 `player-anims.js` 的 `FRAME_W` / `FRAME_H`。
+
+要調整幀數或速度，改 `ANIMS` 裡的 `frames` 與 `fps`；新增動作則多加一列，
+並在 `pickPlayerAnimation()` 補上選擇條件。
+
+### 重新產生預設圖
+
+```bash
+npm run art        # 重新產生 assets/player.png
+```
+
+`tools/make-spritesheet.mjs` 以參數化的方式畫出角色——同一個 `drawCharacter()`
+接受一組姿勢參數（呼吸起伏、前傾、腿部位置、斗篷擺幅），每個動畫幀只是不同的姿勢，
+因此所有幀天然保持一致。PNG 由 `tools/png.mjs` 自行編碼（只用 `node:zlib`），
+所以產生美術同樣不需要安裝任何套件。
+
+> 每一幀是先畫進自己的格子大小暫存區再貼上去的。這是刻意的：早期版本直接畫在整張圖上，
+> 跳躍姿勢的角伸出格子外，結果**溢出到隔壁動畫列**，在遊戲中變成跑步動畫底部的雜訊像素。
+
+### 沒有圖片也能跑
+
+`SpriteSheet` 是非同步載入且不阻塞的：遊戲立刻開始，圖載好才切換過去。
+若圖片缺失、載入失敗，或尺寸不符版面，會自動退回原本的程式繪製角色並在
+console 留下警告——不會崩潰，也不會變成空白。
+
+外觀與物理是分離的：碰撞箱固定為 `PLAYER.w × PLAYER.h`（20 × 34），sprite 則是
+32 × 40 蓄意大於碰撞箱，讓角與斗篷可以超出去。**換圖不會影響任何手感或判定。**
+擠壓拉伸是物理回饋而非美術的一部分，會疊加在當前幀之上。
 
 ## 關卡
 
@@ -117,6 +176,9 @@ npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，�
 - **手感機制回歸**：coyote time、跳躍緩衝、可變跳躍高度、衝刺距離與無敵幀，
   都是調參時最容易默默壞掉、又不會在 diff 中顯現的東西。
 - **數值穩定性**：連續 10 秒亂按所有按鍵後，座標與速度不得出現 `NaN` 或 `Infinity`。
+- **動畫狀態機**：動畫選擇（`pickPlayerAnimation`）與幀計時（`Animator`）都刻意
+  不依賴 DOM，因此可以直接驗證優先順序（衝刺蓋過滯空、受傷蓋過跑步）、
+  循環與非循環動畫的行為，以及 sprite 版面是否與圖檔一致。
 
 `npm run test:browser` 若未安裝 playwright 或伺服器未啟動，會直接跳過而非失敗。
 
@@ -125,6 +187,9 @@ npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，�
 - 新增關卡：仿照 `buildLevel1()` 寫一個 builder，加進 `LEVELS`。
 - 新增敵人：繼承 `enemy.js` 的 `Enemy`，實作 `think()` 與 `draw()`，
   再登記到 `ENEMY_TYPES`。
+- 換角色美術：覆蓋 `assets/player.png`（見上方 Sprite Sheet 一節）。
+- 敵人目前仍是程式繪製；若也想改用 sprite，同一套 `SpriteSheet` + `Animator`
+  可以直接沿用。
 - 調整手感：只改 `constants.js`，然後 `npm test` 確認沒有破壞既有機制。
 
 ## 授權

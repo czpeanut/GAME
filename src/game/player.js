@@ -1,6 +1,23 @@
 import { Body } from './body.js';
 import { PLAYER, PHYS, COLORS } from './constants.js';
 import { clamp, approach, sign, rand, damp } from '../engine/math.js';
+import { Animator } from '../engine/animator.js';
+import { SpriteSheet } from '../engine/sprites.js';
+import {
+  ANIMS,
+  FRAME_W,
+  FRAME_H,
+  pickPlayerAnimation,
+  animTimeScale,
+} from './player-anims.js';
+
+// Shared by every Player instance. Loading is asynchronous and non-blocking;
+// until it finishes (or if it fails) the procedural art is drawn instead.
+const playerSheet = new SpriteSheet({
+  src: './assets/player.png',
+  frameW: FRAME_W,
+  frameH: FRAME_H,
+});
 
 // The player character. Almost every line here exists to make control feel
 // immediate: buffered input, forgiving ground checks, asymmetric gravity,
@@ -41,6 +58,8 @@ export class Player {
     this.runAnim = 0;
     this.muzzleFlash = 0;
     this.trail = [];
+    this.sheet = playerSheet;
+    this.animator = new Animator(ANIMS, 'idle');
   }
 
   get x() { return this.body.x; }
@@ -345,6 +364,18 @@ export class Player {
   _postMove(dt, map) {
     const b = this.body;
 
+    // Re-derive grounded from a 1px probe rather than trusting the collision
+    // result. At rest, gravity accumulates less than a pixel per frame, so the
+    // body only actually collides with the floor every other frame - leaving
+    // `grounded` flickering on/off and the animation snapping between idle and
+    // fall. The probe is stable.
+    b.grounded = b.isOnGround(map);
+
+    // Standing still should not keep building downward speed into the floor;
+    // this removes the matching sub-pixel sink/snap jitter. Upward velocity is
+    // left alone so the first frame of a jump is not cancelled.
+    if (b.grounded && b.vy > 0) b.vy = 0;
+
     // Landing: squash, dust and a little shake proportional to impact speed.
     if (b.grounded && !b.wasGrounded) {
       const impact = clamp(this._lastFallSpeed / PHYS.maxFall, 0, 1);
@@ -379,6 +410,19 @@ export class Player {
   _visuals(dt, wantX) {
     this.squashX = damp(this.squashX, 1, 12, dt);
     this.squashY = damp(this.squashY, 1, 12, dt);
+
+    // Drive the sprite animation from the same state the physics just produced.
+    const state = {
+      dashT: this.dashT,
+      hurtT: this.hurtT,
+      wallSliding: this.wallSliding,
+      grounded: this.grounded,
+      vy: this.body.vy,
+      vx: this.body.vx,
+    };
+    const next = pickPlayerAnimation(state);
+    this.animator.play(next);
+    this.animator.update(dt, animTimeScale(next, state, PLAYER.runSpeed));
 
     if (this.grounded && Math.abs(this.body.vx) > 20) {
       this.runAnim += dt * Math.abs(this.body.vx) * 0.045;
@@ -475,13 +519,28 @@ export class Player {
 
   render(ctx) {
     const b = this.body;
+    const useSprite = this.sheet.ready;
 
     // Dash afterimages first, so they sit behind the character.
     for (const t of this.trail) {
       const a = t.life / t.max;
       ctx.globalAlpha = a * 0.45;
-      ctx.fillStyle = COLORS.playerDash;
-      ctx.fillRect(t.x, t.y, b.w, b.h);
+      if (useSprite) {
+        ctx.save();
+        ctx.translate(t.x + b.w / 2, t.y + b.h);
+        ctx.scale(this.facing, 1);
+        this.sheet.drawFrame(
+          ctx,
+          this.animator.frame,
+          this.animator.row,
+          -FRAME_W / 2,
+          -FRAME_H + 1
+        );
+        ctx.restore();
+      } else {
+        ctx.fillStyle = COLORS.playerDash;
+        ctx.fillRect(t.x, t.y, b.w, b.h);
+      }
     }
     ctx.globalAlpha = 1;
 
@@ -491,13 +550,6 @@ export class Player {
       return;
     }
 
-    const cx = b.centerX;
-    const bottom = b.bottom;
-    const w = b.w * this.squashX;
-    const h = b.h * this.squashY;
-    const x = cx - w / 2;
-    const y = bottom - h; // squash pivots on the feet
-
     ctx.save();
 
     if (this.dashT > 0) {
@@ -505,37 +557,78 @@ export class Player {
       ctx.shadowBlur = 18;
     }
 
-    // Body
+    if (useSprite) this._renderSprite(ctx);
+    else this._renderShapes(ctx);
+
+    this._renderMuzzleFlash(ctx);
+
+    ctx.restore();
+  }
+
+  // Sprite path. The transform pivots on the feet so squash/stretch — which is
+  // pure physics feedback, not part of the artwork — still applies on top of
+  // whatever frame is showing.
+  _renderSprite(ctx) {
+    const b = this.body;
+    ctx.save();
+    ctx.translate(b.centerX, b.bottom);
+    ctx.scale(this.facing * this.squashX, this.squashY);
+
+    // The sprite's feet sit on its bottom row, so shifting up by one frame
+    // height lands them on the collision box's bottom edge.
+    this.sheet.drawFrame(
+      ctx,
+      this.animator.frame,
+      this.animator.row,
+      -FRAME_W / 2,
+      -FRAME_H + 1
+    );
+
+    // Flash white on the hit frames by overlaying the same silhouette.
+    if (this.hurtT > 0) {
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillRect(-FRAME_W / 2, -FRAME_H + 1, FRAME_W, FRAME_H);
+    }
+    ctx.restore();
+  }
+
+  // Fallback path: the original procedural character, used until the sheet
+  // loads and permanently if it fails to.
+  _renderShapes(ctx) {
+    const b = this.body;
+    const cx = b.centerX;
+    const w = b.w * this.squashX;
+    const h = b.h * this.squashY;
+    const x = cx - w / 2;
+    const y = b.bottom - h; // squash pivots on the feet
+
     ctx.fillStyle = this.hurtT > 0 ? '#ffffff' : COLORS.player;
     ctx.fillRect(x, y, w, h);
 
-    // Inner core - a lighter panel that reads as a cloak opening
     ctx.fillStyle = this.hurtT > 0 ? '#ffffff' : COLORS.playerCore;
     const coreW = w * 0.46;
     ctx.fillRect(cx - coreW / 2 + this.facing * w * 0.1, y + h * 0.26, coreW, h * 0.4);
 
-    // Eyes, offset toward the facing direction
     ctx.fillStyle = '#0b1020';
     const eyeX = cx + this.facing * w * 0.14;
     ctx.fillRect(eyeX - 4, y + h * 0.16, 3, 4);
     ctx.fillRect(eyeX + 1, y + h * 0.16, 3, 4);
+  }
 
-    // Muzzle flash
-    if (this.muzzleFlash > 0) {
-      let dx = this.facing;
-      let dy = 0;
-      if (this.aimY !== 0) {
-        dy = this.aimY;
-        dx = 0;
-      }
-      ctx.fillStyle = COLORS.bullet;
-      ctx.shadowColor = COLORS.bulletGlow;
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      ctx.arc(cx + dx * 16, b.centerY + dy * 16, 5, 0, Math.PI * 2);
-      ctx.fill();
+  _renderMuzzleFlash(ctx) {
+    if (this.muzzleFlash <= 0) return;
+    let dx = this.facing;
+    let dy = 0;
+    if (this.aimY !== 0) {
+      dy = this.aimY;
+      dx = 0;
     }
-
-    ctx.restore();
+    ctx.fillStyle = COLORS.bullet;
+    ctx.shadowColor = COLORS.bulletGlow;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(this.body.centerX + dx * 16, this.body.centerY + dy * 16, 5, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
