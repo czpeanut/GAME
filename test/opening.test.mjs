@@ -47,8 +47,10 @@ console.log('spawn and geometry');
   const { x, y } = level.playerStart;
   check('spawn is not inside geometry', !map.overlapsSolid(x, y, 20, 34));
   check('spawn has ground beneath', map.overlapsSolid(x, y + 34 + 1, 20, 2));
-  check('starts locked out of fire and dash',
-    !OPENING_STARTING_ABILITIES.fire && !OPENING_STARTING_ABILITIES.dash);
+  check('starts locked out of dash', !OPENING_STARTING_ABILITIES.dash);
+
+  const { p } = makePlayer(x, y);
+  check('starts armed with nothing but fists', p.weaponId === 'fists');
 }
 
 console.log('\nstory beats are placed in open space');
@@ -173,16 +175,32 @@ console.log('\nthe dash gate actually gates the gap behind it');
     `reached col ${col(withDash.maxX)}, died=${withDash.died}`);
 }
 
-console.log('\nfire is inert until granted, then works immediately');
+console.log('\nweapons are physical pickups, not ability flags');
 {
-  const ctx = makePlayer(level.playerStart.x, level.playerStart.y, { fire: false });
-  ctx.game.bullets = [];
-  run(ctx, () => ['fire'], 10);
-  check('firing does nothing before the gun is given', ctx.game.bullets.length === 0);
+  const stick = level.pickups.find((p) => p.weaponId === 'stick');
+  check('a stick is placed in the level', !!stick);
+  check('the stick sits in open space',
+    !map.overlapsSolid(stick.x + 2, stick.y + 2, (stick.w ?? 16) - 4, (stick.h ?? 16) - 4),
+    `col ${col(stick.x)} row ${row(stick.y)}`);
 
-  ctx.game.story.grantAbility('fire');
+  const firstLooter = level.spawns.find((s) => s.type === 'Walker');
+  check('the stick is reachable before the first looter', stick.x < firstLooter.x,
+    `stick col ${col(stick.x)}, looter col ${col(firstLooter.x)}`);
+
+  // Starting unarmed (fists = melee): pressing fire swings, it does not shoot.
+  const ctx = makePlayer(level.playerStart.x, level.playerStart.y);
   run(ctx, () => ['fire'], 10);
-  check('firing works the instant the story grants it', ctx.game.bullets.length > 0);
+  check('an unarmed press resolves as a melee swing, not a shot',
+    ctx.game.bullets.length === 0 && ctx.game.meleeHits.length > 0,
+    `bullets=${ctx.game.bullets.length} meleeHits=${ctx.game.meleeHits.length}`);
+
+  // Equipping the pistol (what Old Zhou's "give" node does) switches the
+  // very next press to a ranged shot.
+  ctx.p.equipWeapon('pistol');
+  const bulletsBefore = ctx.game.bullets.length;
+  run(ctx, () => ['fire'], 10);
+  check('equipping the pistol makes the next press a shot, immediately',
+    ctx.game.bullets.length > bulletsBefore);
 }
 
 console.log('\nOld Zhou\'s dialogue changes once the gun has been given');

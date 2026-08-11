@@ -60,10 +60,15 @@ export const PLAYER = {
   hurtKnockbackX: 260,
   hurtKnockbackY: 320,
 
-  fireRate: 0.14,
+  // Per-weapon fire rate, damage and spread now live in weapons.js; this is
+  // just the recoil kick applied to the player's own body on every shot,
+  // which is the same regardless of which gun ends up in weapons.js.
   recoil: 55,
 };
 
+// Fallback bullet stats, used only where a spawner doesn't override them
+// (enemy bullets). Player gunfire always supplies its weapon's own damage/
+// speed/color via weapons.js.
 export const BULLET = {
   speed: 720,
   life: 0.9,

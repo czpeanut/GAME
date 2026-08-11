@@ -97,6 +97,18 @@ export class LevelBuilder {
     return this;
   }
 
+  // A weapon lying on the ground - walking over it equips it. `row` follows
+  // the same 2-tile-opening convention as `npc()`.
+  weaponPickup(col, row, weaponId, opts = {}) {
+    this.pickups.push({
+      x: col * TILE,
+      y: (row + 2) * TILE - (opts.h ?? 16),
+      weaponId,
+      ...opts,
+    });
+    return this;
+  }
+
   build(name) {
     return {
       name,
@@ -105,6 +117,7 @@ export class LevelBuilder {
       checkpoints: this.checkpoints,
       triggers: this.triggers,
       npcs: this.npcs,
+      pickups: this.pickups,
       goal: this.goal,
       // Start rows name the top of a 2-tile-tall opening, the same convention
       // checkpoints use. The player is shorter than that opening, so drop them

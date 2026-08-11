@@ -45,23 +45,13 @@ console.log('\nbackward compatibility (no story attached)');
   const game = stubGame();
   check('a Player with no game.story reports every ability enabled', (() => {
     const p = new Player(0, 0, game);
-    return p.abilities.fire && p.abilities.dash && p.abilities.doubleJump && p.abilities.wallJump;
+    return p.abilities.dash && p.abilities.doubleJump && p.abilities.wallJump;
   })());
 }
 
-console.log('\nfire gated');
-{
-  const locked = new StoryState({ fire: false });
-  const ctx = makeGatedPlayer(locked);
-  ctx.game.bullets = [];
-  run(ctx, () => ['fire'], 10);
-  check('firing does nothing while the ability is locked', ctx.game.bullets.length === 0);
-
-  locked.grantAbility('fire');
-  run(ctx, () => ['fire'], 10);
-  check('firing works the moment the ability is granted (no respawn needed)',
-    ctx.game.bullets.length > 0);
-}
+// Whether the player can shoot is no longer an ability flag - it is answered
+// by which weapon is equipped (see weapons.test.mjs). `abilities` now only
+// covers movement tech: dash, double jump, wall jump.
 
 console.log('\ndash gated');
 {

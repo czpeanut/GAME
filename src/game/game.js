@@ -63,6 +63,7 @@ export class Game {
   get score() { return this.world.score; }
   get deaths() { return this.world.deaths; }
   get elapsed() { return this.world.elapsed; }
+  get pickups() { return this.world.pickups; }
   get loopFrame() { return this.loop.frame; }
 
   // Derived from the scene stack rather than stored, so it can never drift
@@ -82,8 +83,12 @@ export class Game {
     this.world.freeze(seconds);
   }
 
-  spawnBullet(x, y, dx, dy) {
-    this.world.spawnBullet(x, y, dx, dy);
+  spawnBullet(x, y, dx, dy, opts) {
+    this.world.spawnBullet(x, y, dx, dy, opts);
+  }
+
+  meleeAttack(rect, weapon, facingDir) {
+    this.world.meleeAttack(rect, weapon, facingDir);
   }
 
   onEnemyKilled(e) {

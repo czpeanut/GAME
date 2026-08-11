@@ -19,9 +19,13 @@ const SAVE_VERSION = 1;
 // frame one exactly as it did before gating existed. Story content that wants
 // a taught-in-stages opening passes its own starting set to `new
 // StoryState(overrides)` instead - see the opening level for an example.
+//
+// Note there is no `fire` entry here: whether the player can shoot is
+// answered by which weapon they are holding (see weapons.js and
+// Player.weaponId), not by an ability flag - there is nothing left to gate
+// once fists are always available as a fallback.
 export const DEFAULT_ABILITIES = {
   move: true,
-  fire: true,
   dash: true,
   doubleJump: true,
   wallJump: true,
@@ -43,7 +47,7 @@ function safeStorage() {
 
 export class StoryState {
   // `startingAbilities` overrides individual entries of DEFAULT_ABILITIES -
-  // e.g. `new StoryState({ fire: false, dash: false })` for a level that
+  // e.g. `new StoryState({ dash: false, wallJump: false })` for a level that
   // wants to teach those moves later rather than start with them.
   constructor(startingAbilities) {
     // Remembered so clear() can reset back to *this instance's* configured

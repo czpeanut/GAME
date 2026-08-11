@@ -3,7 +3,8 @@
 一款 2D 橫向捲軸動作射擊遊戲，以《空洞騎士》(Hollow Knight) 的操作手感為參照：
 流暢的角色控制、可變高度跳躍、衝刺、爬牆跳，以及會捲動的大地圖場景。
 在這之上，另外搭建了一套完整的劇情系統——場景堆疊、對話、過場動畫、能力解鎖與存檔，
-並用它做出了第一章劇情關卡「焦土台灣：甦醒」。
+以及一套資料驅動的武器系統——近戰揮砍與槍械瞄準／彈著擴散，
+並用它們做出了第一章劇情關卡「焦土台灣：甦醒」。
 
 使用純 HTML5 Canvas + 原生 ES Modules 開發，**執行時零相依套件**、不需要建置步驟、
 不需要下載任何美術或音效素材（圖形以程式繪製，音效以 WebAudio 即時合成）。
@@ -17,8 +18,9 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 > ES Modules 無法從 `file://` 直接載入（瀏覽器 CORS 限制），所以需要透過
 > `npm start` 提供的簡易靜態伺服器來執行，它本身也沒有任何相依套件。
 
-預設開啟的是劇情第一章「焦土台灣：甦醒」——射擊與衝刺一開始是鎖住的，
-會隨著劇情進展解鎖（見下方「劇情系統」）。原本的純動作關卡「The Undercroft」
+預設開啟的是劇情第一章「焦土台灣：甦醒」——主角一開始只能空手，武器（棍棒、
+刀具、後期的手槍）要在關卡裡實際撿到才能使用，衝刺則隨劇情進展解鎖
+（見下方「劇情系統」與「武器系統」）。原本的純動作關卡「The Undercroft」
 仍完整保留在 `src/game/level.js` 的 `buildLevel1()`，可作為獨立關卡使用。
 
 ## 操作方式
@@ -27,7 +29,7 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 | --- | --- | --- |
 | 移動 | `A` `D` / 方向鍵 | 左類比 / 十字鍵 |
 | 跳躍 | `Space` / `K` | A |
-| 射擊 | `J` / `Z` | X / RT |
+| 攻擊／開火 | `J` / `Z` | X / RT |
 | 衝刺 | `Shift` / `L` | B / RB |
 | 對話／互動 | `E` | Y |
 | 暫停 | `Esc` / `P` | Start |
@@ -35,7 +37,10 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 | 除錯資訊 | `F3` | — |
 
 - **可變跳躍高度**：按住跳得高，輕點跳得低。
-- **瞄準**：射擊時同時按住 `W`/`S`（上/下）可改變射擊方向，含八方向斜射。
+- **攻擊行為依武器而定**：手上是近戰武器（拳頭/棍棒/刀具）時，`J` 是一次
+  有冷卻時間的揮砍；手上是槍械時，`J` 是持續開火，按住不放會逐漸穩定彈著
+  （見「武器系統」）。
+- **瞄準方向**：攻擊時同時按住 `W`/`S`（上/下）可改變方向，含八方向斜射。
 - **踩踏**：從高處落下踩到敵人可造成傷害並彈起。
 - **衝刺**：八方向，帶無敵幀；落地或觸牆後恢復。
 - **對話中**：`W`/`S` 切換選項，`J`/`Space` 確認（文字未跑完時先跳過打字機效果）。
@@ -88,18 +93,21 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 存檔點，並可存讀 `localStorage`（沒有 storage 的環境——純 Node 測試、
 鎖死的 webview——會安全地退化成不存檔，不會拋錯）。
 
-角色的射擊、衝刺、二段跳、爬牆跳都改成讀取 `player.abilities`，預設
+角色的衝刺、二段跳、爬牆跳都改成讀取 `player.abilities`，預設
 （沒有接上 `game.story` 時，例如所有既有測試）**全部開啟**，行為與加入
 劇情系統前完全一致。要做出「這個能力要在劇情裡才解鎖」的效果，是關卡自己
 選擇的事：
 
 ```js
-new StoryState({ fire: false, dash: false }) // 讓這兩項一開始鎖住
-story.grantAbility('dash')                    // 在對話或過場動畫裡解鎖
+new StoryState({ dash: false })   // 讓衝刺一開始鎖住
+story.grantAbility('dash')        // 在對話或過場動畫裡解鎖
 ```
 
 能力讀取是即時的（不是建構時複製一份），所以過場動畫一解鎖，下一幀角色
 就能衝刺，不必等重生或重新載入關卡。
+
+`abilities` 裡**沒有** `fire` 這一項——能不能開火，是「手上有沒有武器」
+決定的，不是能力旗標，見下方「武器系統」。
 
 ### 觸發器與 NPC
 
@@ -137,13 +145,69 @@ b.npc(col, row, { id: 'old-zhou', onInteract: (world, game) => {...} });
 回呼）。過場動畫期間 `world.simulate = false`，玩家完全無法操作，直到過場
 結束。
 
+## 武器系統
+
+戰鬥能力不是能力旗標，而是「手上實際拿著什麼」——武器是關卡裡可撿拾的
+實體物件（`WeaponPickup`，`src/game/pickup.js`），撿到後 `player.weaponId`
+立刻切換，下一次按攻擊鍵就用新武器的規格，不需要重生或重新載入關卡。
+
+### 武器資料表
+
+所有武器定義集中在 `src/game/weapons.js` 的 `WEAPONS`，每種武器只是一組數值，
+新增武器不必碰 `player.js` 的邏輯：
+
+```js
+export const WEAPONS = {
+  fists:  { type: 'melee',  damage: 1, range: 14, cooldown: 0.24, knockback: 70  },
+  stick:  { type: 'melee',  damage: 1, range: 24, cooldown: 0.32, knockback: 160 },
+  knife:  { type: 'melee',  damage: 2, range: 17, cooldown: 0.26, knockback: 90  },
+  pistol: { type: 'ranged', damage: 4, knockback: 320, bulletSpeed: 900, fireRate: 0.4,
+            aimRampTime: 2.4, spreadMax: 0.5, spreadMin: 0.025 },
+};
+```
+
+角色一律從 `fists`（空手）開始——空手也能打，但傷害低、擊退弱，純粹是
+「沒有武器時不至於完全無法自衛」的保底，不是要玩家依賴的選項。
+
+### 近戰：即時判定，不是拋射物
+
+近戰攻擊按下的瞬間，直接在角色面前開一個矩形範圍（`meleeAttack`，
+`src/game/scenes/world-scene.js`），對範圍內**所有**重疊的敵人同時造成傷害，
+不會產生子彈物件。每種近戰武器有自己的攻速上限（`cooldown`）——按住攻擊鍵
+不會比武器本身的節奏更快，棍棒揮得比拳頭慢但打得更遠、擊退更強。
+
+### 槍械：瞄準會抖，穩住才準
+
+手槍不是按下就打死打準——這是刻意還原一個不熟練的人第一次用槍的手感：
+
+- 按住開火鍵才會持續瞄準，`player.aimHoldT` 從 0 開始累積；放開立刻歸零，
+  下次要重新穩定。
+- 彈著點的擴散角度（`spread`）隨 `aimHoldT` 從 `spreadMax`（剛舉槍，很亂）
+  線性收斂到 `spreadMin`（完全穩定），收斂時間是武器的 `aimRampTime`
+  （手槍是 2.4 秒）——這也是「兩三秒後才穩定」這個設計要求的直接實作。
+  每次實際擊發的子彈方向，都是瞄準方向疊加當下 `spread` 算出的隨機角度，
+  不只是畫面上好看，真的會偏。
+- 畫面上有一個會隨穩定度縮小的準星圓圈（橘→綠），HUD 也有一條穩定度量表，
+  讓玩家看得到自己「還沒穩」。
+- 傷害、擊退、子彈速度都大幅高於近戰武器（見上表），並搭配更強的畫面震動、
+  更沉的槍聲低頻音（`src/engine/audio.js` 的 `shoot()`）——真實世界裡槍械
+  對肉搏武器的致死力差距，在手感上刻意做出對應的落差，而不是數值上小幅
+  領先而已。
+
+### 在關卡裡放武器
+
+```js
+b.weaponPickup(col, row, 'stick');   // 在關卡座標放一把可撿的棍棒
+```
+
 ### 甦醒：第一章
 
 `src/game/levels/opening.js` 是用以上所有系統組出來的實際內容：
 
-醒來（過場動畫）→ 環境敘事（牆上的公告）→ 純跳躍教學缺口 → 與倖存者老周對話
-（五年前的戰爭、政府瓦解、解放軍殘部與劫匪、尋找家人的線索，含一個分支選項）
-→ 獲得手槍（解鎖射擊）→ 首次戰鬥 → 找到腎上腺素（解鎖衝刺）→ 衝刺缺口
+醒來（過場動畫）→ 環境敘事（牆上的公告）→ 純跳躍教學缺口 → 撿到一根棍棒
+→ 第一名持刀劫匪（近戰教學）→ 與倖存者老周對話（五年前的戰爭、政府瓦解、
+解放軍殘部與劫匪、尋找家人的線索，含一個分支選項）→ 獲得手槍 → 第二名
+劫匪（示範槍械威力大幅超越棍棒）→ 找到腎上腺素（解鎖衝刺）→ 衝刺缺口
 → 廢棄哨戒砲台 → 章節結尾過場動畫與收尾畫面。
 
 雙跳與爬牆跳兩項能力在本章維持解鎖狀態——這一章的地形沒有用到它們，
@@ -176,9 +240,11 @@ src/
   game/
     constants.js      所有手感與數值調校參數
     body.js           AABB 移動體與圖磚碰撞解析
-    player.js         玩家控制器（含能力閘門）
+    player.js         玩家控制器（含能力閘門、武器攻擊/瞄準）
     player-anims.js   Sprite 版面定義與動畫狀態選擇（純函式）
-    enemy.js          敵人：Walker / Flyer / Turret
+    enemy.js          敵人：Walker（持刀劫匪）/ Flyer / Turret
+    weapons.js        武器資料表（近戰/槍械數值）
+    pickup.js         可撿拾的武器物件（WeaponPickup）
     bullet.js         彈丸
     level.js          LevelBuilder 關卡建構 API 與第一關（The Undercroft）
     levels/
@@ -285,7 +351,7 @@ npm test               # 全部單元測試（純 Node，無需瀏覽器）
 npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，且伺服器執行中）
 ```
 
-`npm test` 會執行 `test/` 底下所有 `*.test.mjs`（目前 11 個檔案、約 270 項）。
+`npm test` 會執行 `test/` 底下所有 `*.test.mjs`（目前 12 個檔案、約 300 項）。
 玩家控制器、關卡、劇情系統全部不依賴 DOM，因此整個模擬可在 Node 中無頭執行。
 這讓一些在瀏覽器裡很難驗證的問題可以被自動化檢查：
 
@@ -295,6 +361,7 @@ npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，�
 | `opening.test.mjs` | 第一章（甦醒）可通關性，**外加**衝刺缺口在沒解鎖衝刺時真的過不去 |
 | `player.test.mjs` | coyote time、跳躍緩衝、可變跳躍高度、衝刺距離、無敵幀、數值穩定性 |
 | `abilities.test.mjs` | 能力閘門：鎖住時完全無效、解鎖瞬間立即生效、不影響舊有測試 |
+| `weapons.test.mjs` | 武器系統：近戰即時判定/自身冷卻、槍械瞄準擴散隨持握時間收斂並在放開時歸零、子彈數值繼承武器規格、撿拾與重生的持有狀態 |
 | `story.test.mjs` | 旗標、能力預設值、存讀檔（含毀損存檔、跨版本存檔的處理） |
 | `trigger.test.mjs` | StoryTrigger 的一次性/重複觸發、flag 綁定；Npc 的靠近判定 |
 | `dialogue.test.mjs` | 對話節點圖：分支、旗標副作用、打字機計時、異常節點的容錯 |
@@ -325,6 +392,10 @@ npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，�
 - 新增關卡：仿照 `buildLevel1()` 寫一個 builder。
 - 新增敵人：繼承 `enemy.js` 的 `Enemy`，實作 `think()` 與 `draw()`，
   再登記到 `ENEMY_TYPES`。
+- 新增武器：在 `weapons.js` 的 `WEAPONS` 加一筆資料即可；近戰只需
+  `damage`/`range`/`cooldown`/`knockback`，槍械另外要
+  `bulletSpeed`/`fireRate`/`aimRampTime`/`spreadMax`/`spreadMin`。
+  要讓玩家撿到，在關卡裡呼叫 `b.weaponPickup(col, row, '新武器id')`。
 - 換角色美術：覆蓋 `assets/player.png`（見上方 Sprite Sheet 一節）。
 - 敵人目前仍是程式繪製；若也想改用 sprite，同一套 `SpriteSheet` + `Animator`
   可以直接沿用。

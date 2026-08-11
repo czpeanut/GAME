@@ -4,6 +4,8 @@ import { Player } from '../player.js';
 import { Bullet } from '../bullet.js';
 import { ENEMY_TYPES } from '../enemy.js';
 import { StoryTrigger, Npc } from '../trigger.js';
+import { WeaponPickup } from '../pickup.js';
+import { getWeapon } from '../weapons.js';
 import { Background } from '../background.js';
 import { TileRenderer } from '../tilerender.js';
 import { Camera } from '../../engine/camera.js';
@@ -57,6 +59,7 @@ export class WorldScene extends Scene {
     this.checkpoints = level.checkpoints.map((c) => ({ ...c, active: false }));
     this.triggers = (level.triggers ?? []).map((t) => new StoryTrigger(t));
     this.npcs = (level.npcs ?? []).map((n) => new Npc(n));
+    this.pickups = (level.pickups ?? []).map((p) => new WeaponPickup(p));
     this.activeCheckpoint = { x: level.playerStart.x, y: level.playerStart.y };
     this.goal = level.goal ?? null;
     this.goalPulse = 0;
@@ -98,8 +101,23 @@ export class WorldScene extends Scene {
     this.freezeT = Math.max(this.freezeT, seconds);
   }
 
-  spawnBullet(x, y, dx, dy) {
-    this.bullets.push(new Bullet(x, y, dx, dy, { fromPlayer: true }));
+  spawnBullet(x, y, dx, dy, opts = {}) {
+    this.bullets.push(new Bullet(x, y, dx, dy, { ...opts, fromPlayer: true }));
+  }
+
+  // Resolves an instant melee swing: every living enemy overlapping `rect`
+  // takes the hit. Unlike a bullet, a swing does not stop at the first
+  // target - a blade or a bat sweeping through a cluster of enemies hits all
+  // of them, which is both realistic and is most of what makes melee weapons
+  // worth using instead of just waiting to find a gun.
+  meleeAttack(rect, weapon, facingDir) {
+    let hitAny = false;
+    for (const e of this.enemies) {
+      if (e.dead || !aabb(rect, e.rect)) continue;
+      e.hurt(weapon.damage, facingDir, weapon.knockback);
+      hitAny = true;
+    }
+    if (hitAny) this.camera.addTrauma(0.05);
   }
 
   respawn() {
@@ -156,6 +174,7 @@ export class WorldScene extends Scene {
 
     this._resolveCollisions();
     this._checkCheckpoints();
+    this._checkPickups();
     this._checkTriggers();
     this._checkNpcs(input);
     this._checkGoal();
@@ -197,7 +216,7 @@ export class WorldScene extends Scene {
         for (const e of this.enemies) {
           if (e.dead) continue;
           if (aabb(b.rect, e.rect)) {
-            e.hurt(b.damage, Math.sign(b.vx) || 1);
+            e.hurt(b.damage, Math.sign(b.vx) || 1, b.knockback);
             b.dead = true;
             this.camera.addTrauma(0.06);
             break;
@@ -257,6 +276,31 @@ export class WorldScene extends Scene {
     }
   }
 
+  _checkPickups() {
+    for (const p of this.pickups) {
+      if (p.collected) continue;
+      p.update(1 / 60);
+      if (!aabb(this.player.rect, p.rect)) continue;
+
+      p.collected = true;
+      this.player.equipWeapon(p.weaponId);
+      const weapon = getWeapon(p.weaponId);
+      this.game.hud.showMessage(`撿到${weapon.name}`);
+      this.game.audio.pickup();
+      this.particles.burst(p.centerX, p.y + p.h / 2, 14, {
+        color: ['#ffffff', '#c7d0da'],
+        speedMin: 40,
+        speedMax: 160,
+        lifeMin: 0.2,
+        lifeMax: 0.5,
+        gravity: -40,
+        shape: 'circle',
+        sizeMin: 1,
+        sizeMax: 3,
+      });
+    }
+  }
+
   _checkTriggers() {
     for (const t of this.triggers) t.update(this.player.rect, this, this.game);
   }
@@ -305,6 +349,7 @@ export class WorldScene extends Scene {
 
     this.tiles.render(ctx, camX, camY, VIEW.width, VIEW.height);
     this._renderCheckpoints(ctx);
+    this._renderPickups(ctx);
     this._renderNpcs(ctx);
     this._renderGoal(ctx);
 
@@ -343,6 +388,13 @@ export class WorldScene extends Scene {
       ctx.arc(cx, c.y, 6, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
+    }
+  }
+
+  _renderPickups(ctx) {
+    for (const p of this.pickups) {
+      if (p.collected || !this.camera.isVisible(p)) continue;
+      p.render(ctx);
     }
   }
 

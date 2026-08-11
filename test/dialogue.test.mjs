@@ -2,8 +2,9 @@
 // and flag/action side effects. No canvas involved.
 
 import { DialogueRunner } from '../src/game/dialogue-runner.js';
+import { DialogueScene } from '../src/game/scenes/dialogue-scene.js';
 import { StoryState } from '../src/game/story-state.js';
-import { check, summary } from './harness.mjs';
+import { StubInput, check, summary } from './harness.mjs';
 
 console.log('\nlinear script: lines advance, then the conversation ends');
 {
@@ -146,6 +147,45 @@ console.log('\nrobustness');
 
   const noGame = new DialogueRunner({ start: 'a', nodes: { a: { lines: ['x'], flag: 'f' } } });
   check('a flag on a node with no game/story attached does not throw', !noGame.finished);
+}
+
+console.log('\nDialogueScene: a confirm key already held when the box opens still works');
+{
+  // Regression: input.pressed() is edge-triggered, so a fire/interact key
+  // that was already down the instant a DialogueScene opens (very plausible
+  // once melee combat made "hold fire" normal) would never see a fresh press
+  // and could stall the conversation forever without this fallback.
+  const script = { start: 'a', nodes: { a: { lines: ['一'], next: 'b' }, b: { lines: ['二'] } } };
+  const popped = { value: false };
+  const game = { world: {}, scenes: { pop: () => { popped.value = true; } } };
+  const scene = new DialogueScene(game, script, { charsPerSecond: 1000 });
+
+  const input = new StubInput();
+  input.set(['fire']); // held from before the scene existed - no edge this frame
+
+  const STEP = 1 / 60;
+  let advanced = false;
+  for (let f = 0; f < 60; f++) {
+    input.set(['fire']); // still just held, never released
+    scene.update(STEP, input);
+    if (scene.runner.nodeId === 'b') {
+      advanced = true;
+      break;
+    }
+  }
+  check('a continuously-held confirm key eventually advances the dialogue',
+    advanced, `ended on node "${scene.runner.nodeId}" after up to 1s of holding`);
+
+  // A quick tap still behaves exactly as before: no artificial delay.
+  const script2 = { start: 'a', nodes: { a: { lines: ['一'], next: 'b' }, b: { lines: ['二'] } } };
+  const scene2 = new DialogueScene(game, script2, { charsPerSecond: 1000 });
+  const input2 = new StubInput();
+  input2.set([]);
+  scene2.update(STEP, input2); // reveal frame
+  input2.set(['fire']); // fresh press edge
+  scene2.update(STEP, input2);
+  check('a fresh press still confirms on the very next update, no delay',
+    scene2.runner.isFullyRevealed || scene2.runner.nodeId === 'b');
 }
 
 process.exit(summary() ? 0 : 1);

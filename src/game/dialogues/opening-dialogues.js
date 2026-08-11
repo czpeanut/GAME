@@ -144,7 +144,7 @@ export function zhouScript(game) {
           '外面不比從前，該出手的時候，別客氣。',
         ],
         flag: 'received_gun',
-        action: (world, game) => game.story.grantAbility('fire'),
+        action: (world, game) => world.player.equipWeapon('pistol'),
         next: 'farewell',
       },
       farewell: {

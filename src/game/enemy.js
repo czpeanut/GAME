@@ -35,11 +35,11 @@ class Enemy {
     this.think(dt, player, map);
   }
 
-  hurt(amount, knockDir) {
+  hurt(amount, knockDir, force = 130) {
     if (this.dead) return;
     this.health -= amount;
     this.hitFlash = 0.12;
-    this.body.vx += knockDir * 130;
+    this.body.vx += knockDir * force;
 
     this.game.audio.hitEnemy();
     this.game.freeze(0.03);
@@ -111,11 +111,13 @@ class Enemy {
 }
 
 // ---------------------------------------------------------------------------
-// Walker: patrols a platform, turns at walls and ledges, charges when it sees
-// the player.
+// Walker: a knife-wielding looter. Patrols a platform, turns at walls and
+// ledges, charges knife-first when it sees the player - the primary early
+// threat, meant to be fought with whatever melee weapon is at hand before
+// firearms enter the story.
 export class Walker extends Enemy {
   constructor(x, y, game) {
-    super(x, y, 26, 26, game);
+    super(x, y, 22, 26, game);
     this.maxHealth = this.health = 3;
     this.speed = 62;
     this.chargeSpeed = 175;
@@ -160,28 +162,54 @@ export class Walker extends Enemy {
   draw(ctx) {
     const { x, y, w, h } = this;
     const charging = this.aggro > 0;
-    ctx.fillStyle = charging ? '#ff7089' : this.color;
+    const cx = x + w / 2;
+    const bodyColor = charging ? '#ff7089' : this.color;
+    const stride = Math.sin(this.legPhase) * 2;
 
-    // Legs
+    // Legs: a simple walk cycle, opposed.
     ctx.fillStyle = COLORS.enemyDark;
-    for (let i = 0; i < 3; i++) {
-      const off = Math.sin(this.legPhase + i * 2.1) * 3;
-      ctx.fillRect(x + 3 + i * 8, y + h - 4, 4, 5 + off);
-    }
+    ctx.fillRect(cx - 5, y + h - 8 + stride, 3, 8 - stride);
+    ctx.fillRect(cx + 2, y + h - 8 - stride, 3, 8 + stride);
 
-    // Shell
-    ctx.fillStyle = charging ? '#ff7089' : this.color;
+    // Torso.
+    ctx.fillStyle = bodyColor;
+    ctx.fillRect(x + 3, y + 9, w - 6, h - 17);
+
+    // Head.
+    ctx.fillStyle = bodyColor;
     ctx.beginPath();
-    ctx.moveTo(x, y + h - 2);
-    ctx.lineTo(x + 2, y + 6);
-    ctx.quadraticCurveTo(x + w / 2, y - 4, x + w - 2, y + 6);
-    ctx.lineTo(x + w, y + h - 2);
-    ctx.closePath();
+    ctx.arc(cx, y + 6, 5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Eye
-    ctx.fillStyle = charging ? '#fff3a0' : '#2a0f18';
-    ctx.fillRect(x + (this.facing > 0 ? w - 10 : 5), y + 8, 5, 5);
+    // Eyes, biased toward facing - the only readable "expression" at this
+    // size, brighter and wider-set while charging to read as aggressive.
+    ctx.fillStyle = charging ? '#fff3a0' : '#1a0a10';
+    const eyeX = cx + this.facing * 2;
+    ctx.fillRect(eyeX - 2, y + 5, 2, 2);
+    ctx.fillRect(eyeX + 1, y + 5, 2, 2);
+
+    // The knife: held low at rest, thrust out ahead of the lunge while
+    // charging - the clearest possible telegraph that contact with this
+    // enemy is a blade, not a shove.
+    const reach = charging ? 11 : 4;
+    const knifeY = y + h - 13;
+    const tipX = cx + this.facing * (w / 2 + reach);
+    ctx.save();
+    ctx.strokeStyle = '#0c0608';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx + this.facing * (w / 2 - 2), knifeY + 2);
+    ctx.lineTo(cx + this.facing * (w / 2 + reach * 0.4), knifeY);
+    ctx.stroke();
+    // Blade.
+    ctx.fillStyle = charging ? '#f4f7ff' : '#c7d0da';
+    ctx.beginPath();
+    ctx.moveTo(cx + this.facing * (w / 2 + reach * 0.3), knifeY - 2);
+    ctx.lineTo(tipX, knifeY - 1);
+    ctx.lineTo(cx + this.facing * (w / 2 + reach * 0.3), knifeY + 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 }
 

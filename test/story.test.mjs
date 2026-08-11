@@ -33,7 +33,7 @@ console.log('\nabilities: unlocked by default (matches the pre-story game exactl
   const s = new StoryState();
   check('dash starts unlocked with no overrides', s.hasAbility('dash'));
   check('movement is unlocked by default', s.hasAbility('move'));
-  check('every default ability is unlocked', ['fire', 'dash', 'doubleJump', 'wallJump']
+  check('every default ability is unlocked', ['dash', 'doubleJump', 'wallJump']
     .every((a) => s.hasAbility(a)));
   check('granting an already-unlocked ability reports false', s.grantAbility('dash') === false);
   check('an unknown ability name reads as false rather than throwing',
@@ -42,8 +42,8 @@ console.log('\nabilities: unlocked by default (matches the pre-story game exactl
 
 console.log('\nabilities: a level can opt into a gated, taught-in-stages start');
 {
-  const s = new StoryState({ fire: false, dash: false });
-  check('overridden abilities start locked', !s.hasAbility('fire') && !s.hasAbility('dash'));
+  const s = new StoryState({ wallJump: false, dash: false });
+  check('overridden abilities start locked', !s.hasAbility('wallJump') && !s.hasAbility('dash'));
   check('abilities not mentioned in the override keep their default', s.hasAbility('doubleJump'));
   check('move is still unlocked even when other abilities are gated', s.hasAbility('move'));
 
@@ -67,12 +67,13 @@ console.log('\nsave / load round-trip (with a fake storage backend)');
 {
   globalThis.localStorage = fakeLocalStorage();
   try {
-    // Gated start, so granting fire (and leaving dash alone) is an observable
-    // difference in the saved data rather than something true by default.
-    const a = new StoryState({ fire: false, dash: false });
+    // Gated start, so granting wallJump (and leaving dash alone) is an
+    // observable difference in the saved data rather than something true by
+    // default.
+    const a = new StoryState({ wallJump: false, dash: false });
     a.setFlag('woke_up');
     a.setFlag('found_note');
-    a.grantAbility('fire');
+    a.grantAbility('wallJump');
     a.setCheckpoint('opening', 'ward_exit');
     check('save succeeds when storage is available', a.save() === true);
 
@@ -83,7 +84,7 @@ console.log('\nsave / load round-trip (with a fake storage backend)');
     check('flags survive the round-trip',
       b.hasFlag('woke_up') && b.hasFlag('found_note') && !b.hasFlag('never_set'));
     check('abilities survive the round-trip',
-      b.hasAbility('fire') && !b.hasAbility('dash'));
+      b.hasAbility('wallJump') && !b.hasAbility('dash'));
     check('checkpoint survives the round-trip',
       b.levelId === 'opening' && b.checkpointId === 'ward_exit');
   } finally {
@@ -140,8 +141,7 @@ console.log('\ndefault ability table');
 {
   check('DEFAULT_ABILITIES has move enabled', DEFAULT_ABILITIES.move === true);
   check('DEFAULT_ABILITIES leaves everything unlocked by default',
-    DEFAULT_ABILITIES.dash && DEFAULT_ABILITIES.doubleJump &&
-    DEFAULT_ABILITIES.wallJump && DEFAULT_ABILITIES.fire);
+    DEFAULT_ABILITIES.dash && DEFAULT_ABILITIES.doubleJump && DEFAULT_ABILITIES.wallJump);
 }
 
 process.exit(summary() ? 0 : 1);

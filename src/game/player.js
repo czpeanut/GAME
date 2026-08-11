@@ -1,8 +1,9 @@
 import { Body } from './body.js';
 import { PLAYER, PHYS, COLORS } from './constants.js';
-import { clamp, approach, sign, rand, damp } from '../engine/math.js';
+import { clamp, approach, sign, rand, damp, lerp } from '../engine/math.js';
 import { Animator } from '../engine/animator.js';
 import { SpriteSheet } from '../engine/sprites.js';
+import { getWeapon } from './weapons.js';
 import {
   ANIMS,
   FRAME_W,
@@ -16,7 +17,12 @@ import {
 // - level1, and every test - gets the full moveset from frame one, exactly as
 // before ability gating existed. Only a real Game wired to a StoryState can
 // restrict this, by unlocking abilities one at a time as the story progresses.
-const FULL_ABILITIES = { fire: true, dash: true, doubleJump: true, wallJump: true };
+//
+// Weapons are not part of this table: whether the player can shoot or swing
+// something is answered entirely by which weapon they are holding
+// (player.weaponId), not by an ability flag. There would be nothing left to
+// gate once fists are always available.
+const FULL_ABILITIES = { dash: true, doubleJump: true, wallJump: true };
 
 // Shared by every Player instance. Loading is asynchronous and non-blocking;
 // until it finishes (or if it fails) the procedural art is drawn instead.
@@ -48,10 +54,22 @@ export class Player {
     this.dashDirY = 0;
     this.hasDash = true;
     this.invuln = 0;
-    this.fireCd = 0;
     this.wallJumpLock = 0;
     this.wallStick = 0;
     this.hurtT = 0;
+
+    // Weapon state. Fists are always available so an attack press is never a
+    // silent no-op; anything better is found in the world and equipped by
+    // walking over it (see WeaponPickup / WorldScene._checkPickups).
+    this.weaponId = 'fists';
+    this.attackCd = 0;
+    // How long `fire` has been held continuously with a ranged weapon out -
+    // this is the whole "unpracticed shooter" mechanic: the longer it's held,
+    // the tighter the spread, and letting go resets it.
+    this.aimHoldT = 0;
+    this.isAiming = false;
+    this.meleeSwingT = 0;
+    this.meleeSwingDir = 1;
 
     this.wallSliding = false;
     this.aimY = 0;
@@ -90,6 +108,24 @@ export class Player {
     return this.game.story ? this.game.story.abilities : FULL_ABILITIES;
   }
 
+  get weapon() {
+    return getWeapon(this.weaponId);
+  }
+
+  equipWeapon(id) {
+    if (id === this.weaponId) return;
+    this.weaponId = id;
+    this.attackCd = 0;
+    this.aimHoldT = 0;
+  }
+
+  // Shared by the firing logic and the reticle renderer, so what the player
+  // sees is exactly what determines where the next shot goes.
+  _currentSpread(w) {
+    const steadiness = clamp(this.aimHoldT / w.aimRampTime, 0, 1);
+    return lerp(w.spreadMax, w.spreadMin, steadiness);
+  }
+
   update(dt, input, map) {
     if (!this.alive) {
       this.body.vy = Math.min(this.body.vy + PHYS.gravity * dt, PHYS.maxFall);
@@ -117,7 +153,7 @@ export class Player {
       this._handleJump(input, map);
     }
 
-    this._handleFire(dt, input);
+    this._handleAttack(dt, input);
 
     this.body.move(map, dt);
     this._postMove(dt, map);
@@ -129,12 +165,13 @@ export class Player {
     this.jumpBufferT -= dt;
     this.dashCd -= dt;
     this.invuln -= dt;
-    this.fireCd -= dt;
+    this.attackCd -= dt;
     this.wallJumpLock -= dt;
     this.hurtT -= dt;
     this.muzzleFlash -= dt;
     if (this.dashT > 0) this.dashT -= dt;
     if (this.wallStick > 0) this.wallStick -= dt;
+    if (this.meleeSwingT > 0) this.meleeSwingT -= dt;
   }
 
   _updateGroundState(map) {
@@ -337,9 +374,78 @@ export class Player {
     }
   }
 
-  _handleFire(dt, input) {
-    if (!this.abilities.fire || !input.down('fire') || this.fireCd > 0) return;
-    this.fireCd = PLAYER.fireRate;
+  // Dispatches to melee or ranged handling based on the currently equipped
+  // weapon. This is the only place that branches on weapon.type - everything
+  // downstream (WorldScene.meleeAttack, Bullet) just resolves whatever it is
+  // handed.
+  _handleAttack(dt, input) {
+    const w = this.weapon;
+    if (w.type === 'melee') {
+      this.isAiming = false;
+      this.aimHoldT = 0;
+      this._handleMelee(input, w);
+    } else {
+      this._handleRanged(dt, input, w);
+    }
+  }
+
+  // Instant swing: press, and anything the weapon's reach touches takes
+  // damage immediately. No spread, no ramp-up - a weapon in your hand hits
+  // exactly as far as it reaches, every time.
+  _handleMelee(input, w) {
+    if (!input.down('fire') || this.attackCd > 0) return;
+    this.attackCd = w.cooldown;
+    this.meleeSwingT = w.swingTime;
+    this.meleeSwingDir = this.facing;
+
+    const range = w.range;
+    const arcH = this.body.h * 0.75;
+    const rect = {
+      x: this.facing > 0 ? this.body.right : this.body.x - range,
+      y: this.centerY - arcH / 2,
+      w: range,
+      h: arcH,
+    };
+    this.game.meleeAttack(rect, w, this.facing);
+
+    this.game.audio.swing();
+    this.game.camera.addTrauma(0.03);
+    this.game.particles.burst(
+      this.facing > 0 ? rect.x + rect.w : rect.x,
+      this.centerY,
+      6,
+      {
+        color: ['#ffffff', '#c7d0da'],
+        speedMin: 60,
+        speedMax: 180,
+        angle: this.facing > 0 ? 0 : Math.PI,
+        spread: 0.6,
+        lifeMin: 0.08,
+        lifeMax: 0.2,
+        shape: 'streak',
+        sizeMin: 2,
+        sizeMax: 4,
+      }
+    );
+  }
+
+  // Holding fire both aims and fires: `aimHoldT` accumulates for as long as
+  // fire stays held (independent of the per-shot cooldown, so it measures
+  // "how long have you been steadying up", not "how many shots landed") and
+  // narrows the spread each shot is drawn from. Letting go resets it - the
+  // player has to hold their aim through a fight, not just once at the start
+  // of it.
+  _handleRanged(dt, input, w) {
+    const held = input.down('fire');
+    this.isAiming = held;
+
+    if (held) this.aimHoldT += dt;
+    else this.aimHoldT = 0;
+
+    if (!held || this.attackCd > 0) return;
+    this.attackCd = w.fireRate;
+
+    const spread = this._currentSpread(w);
 
     // Aim: up/down override horizontal, matching twin-stick-lite conventions.
     let dx = this.facing;
@@ -354,10 +460,22 @@ export class Player {
       }
     }
 
+    // The muzzle sits at the aimed direction; the actual shot scatters
+    // within `spread` around it - an unsteady hand, not a moving gun.
+    const angle = Math.atan2(dy, dx) + rand(-spread, spread);
+    const fdx = Math.cos(angle);
+    const fdy = Math.sin(angle);
+
     const muzzleX = this.centerX + dx * 16;
     const muzzleY = this.centerY + dy * 16 - 2;
 
-    this.game.spawnBullet(muzzleX, muzzleY, dx, dy);
+    this.game.spawnBullet(muzzleX, muzzleY, fdx, fdy, {
+      damage: w.damage,
+      speed: w.bulletSpeed,
+      color: w.bulletColor,
+      glow: w.bulletGlow,
+      knockback: w.knockback,
+    });
     this.muzzleFlash = 0.06;
 
     // Recoil, and a little extra kick when firing straight down so shooting
@@ -365,16 +483,18 @@ export class Player {
     this.body.vx -= dx * PLAYER.recoil * (this.grounded ? 0.25 : 1);
     if (dy > 0 && !this.grounded) this.body.vy -= 60;
 
-    this.game.camera.addTrauma(0.05);
+    // A gun should feel like it hits harder than its own recoil animation -
+    // more shake than the old fixed-damage bullet ever needed.
+    this.game.camera.addTrauma(0.1);
     this.game.audio.shoot();
-    this.game.particles.burst(muzzleX, muzzleY, 5, {
+    this.game.particles.burst(muzzleX, muzzleY, 7, {
       color: [COLORS.bullet, COLORS.bulletGlow],
       speedMin: 40,
-      speedMax: 160,
-      angle: Math.atan2(dy, dx),
-      spread: 0.45,
+      speedMax: 180,
+      angle,
+      spread: 0.3,
       lifeMin: 0.06,
-      lifeMax: 0.18,
+      lifeMax: 0.2,
       sizeMin: 1,
       sizeMax: 3,
     });
@@ -534,6 +654,11 @@ export class Player {
     this.hasDash = true;
     this.airJumps = PLAYER.maxAirJumps;
     this.trail.length = 0;
+    // The weapon itself is not reset here - dying does not make you drop
+    // whatever you picked up. Only the in-progress aim state is cleared, so a
+    // death mid-aim does not carry a phantom steadied cone into the respawn.
+    this.aimHoldT = 0;
+    this.attackCd = 0;
   }
 
   render(ctx) {
@@ -579,9 +704,14 @@ export class Player {
     if (useSprite) this._renderSprite(ctx);
     else this._renderShapes(ctx);
 
+    this._renderWeapon(ctx);
     this._renderMuzzleFlash(ctx);
 
     ctx.restore();
+
+    // Outside the dash-glow save/restore - the reticle is a world-space aim
+    // indicator, not part of the character's own shadow/glow treatment.
+    this._renderAimReticle(ctx);
   }
 
   // Sprite path. The transform pivots on the feet so squash/stretch — which is
@@ -649,5 +779,94 @@ export class Player {
     ctx.beginPath();
     ctx.arc(this.body.centerX + dx * 16, this.body.centerY + dy * 16, 5, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  // Draws whatever is currently in hand. Fists draw nothing extra (the
+  // sprite's own hands are the weapon); everything else is a small
+  // procedural shape layered on top, independent of which sprite frame is
+  // showing, so swapping weapons never needs new animation frames.
+  _renderWeapon(ctx) {
+    const w = this.weapon;
+    const cx = this.body.centerX;
+    const cy = this.body.centerY;
+
+    if (w.type === 'ranged') {
+      let dx = this.facing;
+      let dy = 0;
+      if (this.aimY !== 0) {
+        dy = this.aimY;
+        dx = 0;
+      }
+      ctx.save();
+      ctx.translate(cx, cy + 2);
+      ctx.rotate(Math.atan2(dy, dx));
+      ctx.fillStyle = '#2a2a30';
+      ctx.fillRect(4, -2, 12, 4);
+      ctx.fillStyle = '#c7d0da';
+      ctx.fillRect(14, -1, 3, 2);
+      ctx.restore();
+      return;
+    }
+
+    if (w.id === 'fists') return;
+
+    // Melee weapon: rests low near the hip normally, swings out ahead of the
+    // character while meleeSwingT counts down from the swing's full duration.
+    const mid = this.meleeSwingT > 0 ? 1 - this.meleeSwingT / w.swingTime : 0.25;
+    const dir = this.meleeSwingT > 0 ? this.meleeSwingDir : this.facing;
+    const extend = this.meleeSwingT > 0 ? Math.sin(mid * Math.PI) : 0.25;
+    const tipX = cx + dir * (10 + w.range * extend);
+    const tipY = cy - 2;
+
+    ctx.save();
+    ctx.strokeStyle = w.id === 'stick' ? '#8a6a42' : '#0c0608';
+    ctx.lineWidth = w.id === 'stick' ? 3 : 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + dir * 6, cy + 4);
+    ctx.lineTo(tipX, tipY);
+    ctx.stroke();
+
+    if (w.id === 'knife') {
+      ctx.fillStyle = '#c7d0da';
+      ctx.beginPath();
+      ctx.moveTo(tipX - dir * 4, tipY - 2);
+      ctx.lineTo(tipX + dir * 3, tipY);
+      ctx.lineTo(tipX - dir * 4, tipY + 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // A shrinking ring showing roughly where the next shot will land - the
+  // visible half of the aim-ramp mechanic. Only shown while actively holding
+  // fire with a ranged weapon; there is nothing to steady otherwise.
+  _renderAimReticle(ctx) {
+    const w = this.weapon;
+    if (w.type !== 'ranged' || !this.isAiming) return;
+
+    let dx = this.facing;
+    let dy = 0;
+    if (this.aimY !== 0) {
+      dy = this.aimY;
+      dx = 0;
+    }
+    const spread = this._currentSpread(w);
+    const dist = 70;
+    const cx = this.centerX + dx * dist;
+    const cy = this.centerY + dy * dist - 2;
+    const radius = Math.max(3, Math.tan(spread) * dist);
+    const steady = spread <= w.spreadMin * 1.5;
+
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = steady ? '#8fffa0' : '#ffe9a8';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fillRect(cx - 1, cy - 1, 2, 2);
+    ctx.restore();
   }
 }

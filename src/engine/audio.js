@@ -94,6 +94,17 @@ export class Audio {
   shoot() {
     this.tone({ freq: 880, endFreq: 220, type: 'square', dur: 0.09, gain: 0.14 });
     this.noise({ dur: 0.07, gain: 0.09, freq: 3000, endFreq: 600 });
+    // A low thump under the crack sells a firearm as something with real
+    // stopping power - deliberately absent from swing(), which should sound
+    // small and human by comparison.
+    this.tone({ freq: 120, endFreq: 45, type: 'sine', dur: 0.12, gain: 0.22 });
+  }
+
+  // A melee swing - a quick, unglamorous whoosh. No low end, no crack: this
+  // is a stick or a knife, not a weapon that should ever sound as
+  // consequential as the pistol.
+  swing() {
+    this.noise({ dur: 0.09, gain: 0.14, freq: 1400, endFreq: 500, type: 'bandpass', q: 1.2 });
   }
 
   jump() {

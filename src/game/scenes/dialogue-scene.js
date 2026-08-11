@@ -31,6 +31,14 @@ export class DialogueScene extends Scene {
     this.onClose = opts.onClose;
     this.wrapCache = null;
     this.wrapCacheKey = '';
+    // Confirming normally requires a fresh press edge, so a confirm key that
+    // was *already* held down the instant this scene opened - easy to hit
+    // once melee combat made "hold fire" a normal way to play - would never
+    // see one and could stall the conversation forever. Tracking how long
+    // the key has been continuously held lets a held key still repeat-fire
+    // confirm() after a short delay, the same affordance a held key gets in
+    // most text-heavy games, without making a single tap double-advance.
+    this._holdT = 0;
   }
 
   enter() {
@@ -47,8 +55,21 @@ export class DialogueScene extends Scene {
 
     if (input.pressed('up')) this.runner.moveChoice(-1);
     if (input.pressed('down')) this.runner.moveChoice(1);
-    if (input.pressed('interact') || input.pressed('fire') || input.pressed('jump')) {
+
+    const confirmHeld = input.down('interact') || input.down('fire') || input.down('jump');
+    const confirmPressed = input.pressed('interact') || input.pressed('fire') || input.pressed('jump');
+
+    if (confirmPressed) {
       this.runner.confirm();
+      this._holdT = 0;
+    } else if (confirmHeld) {
+      this._holdT += dt;
+      if (this._holdT > 0.45) {
+        this.runner.confirm();
+        this._holdT = 0;
+      }
+    } else {
+      this._holdT = 0;
     }
 
     if (this.runner.finished) this.game.scenes.pop();

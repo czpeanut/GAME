@@ -18,7 +18,9 @@ export function stubGame() {
     camera: { addTrauma() {} },
     freeze() {},
     bullets: [],
-    spawnBullet() { this.bullets.push({}); },
+    spawnBullet(x, y, dx, dy, opts) { this.bullets.push({ x, y, dx, dy, ...opts }); },
+    meleeHits: [],
+    meleeAttack(rect, weapon, dir) { this.meleeHits.push({ rect, weapon, dir }); },
     deaths: 0,
     onPlayerDeath() { this.deaths++; },
   };

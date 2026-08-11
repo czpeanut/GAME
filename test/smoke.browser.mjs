@@ -113,18 +113,43 @@ const cam = await page.evaluate(() => window.game.camera.x);
 check('player moves right', reachedX > 400, `x=${reachedX.toFixed(0)}`);
 check('camera scrolls with the player', cam > 0, `camX=${cam.toFixed(0)}`);
 
-// Fire and dash may be gated by story progression in the default game (they
-// are here). This checks the mechanism itself works when enabled, the same
-// way a fresh save eventually enables it - the pacing of *when* that happens
-// is the story content's job to test (test/opening.test.mjs), not this one's.
+// Firing and dash may be gated by story progression in the default game
+// (they are here: the player starts unarmed, and dash is locked). This
+// checks the mechanisms themselves work once available, the same way
+// picking up a weapon or an adrenaline shot eventually enables them - the
+// pacing of *when* that happens is the story content's job to test
+// (test/opening.test.mjs), not this one's.
 await page.evaluate(() => {
-  window.game.story.grantAbility('fire');
+  window.game.player.equipWeapon('pistol');
   window.game.story.grantAbility('dash');
 });
 
+// Checked via score/shots-fired bookkeeping rather than the live bullets
+// array: a fired bullet can hit a wall or enemy and be swept from that array
+// well within a longer wait, depending on where this lands in the level, so
+// "was one ever spawned" needs a signal that survives the bullet's own
+// lifetime - the total fired count does.
+const firedBefore = await page.evaluate(() => window.game.world.bulletsFiredDebug ?? 0);
+await page.evaluate(() => {
+  // Count every spawnBullet call without changing production behaviour.
+  const w = window.game.world;
+  if (!w._spawnBulletWrapped) {
+    const original = w.spawnBullet.bind(w);
+    w.bulletsFiredDebug = 0;
+    w.spawnBullet = (...args) => {
+      w.bulletsFiredDebug++;
+      return original(...args);
+    };
+    w._spawnBulletWrapped = true;
+  }
+});
 await page.keyboard.down('KeyJ');
-await page.waitForTimeout(400);
-check('firing spawns bullets', await page.evaluate(() => window.game.bullets.length >= 0));
+await page.waitForTimeout(120); // pistol's attackCd starts at 0 right after
+// equip, so the first shot fires on the very next simulated frame - no need
+// to wait out a full fireRate cycle just to observe it.
+const firedAfter = await page.evaluate(() => window.game.world.bulletsFiredDebug ?? 0);
+check('firing spawns bullets once armed', firedAfter > firedBefore,
+  `fired before=${firedBefore} after=${firedAfter}`);
 await page.keyboard.up('KeyJ');
 
 await page.keyboard.down('KeyD');

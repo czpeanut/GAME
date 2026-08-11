@@ -14,6 +14,7 @@ export class Bullet {
     this.vy = dy * this.speed;
     this.life = opts.life ?? BULLET.life;
     this.damage = opts.damage ?? BULLET.damage;
+    this.knockback = opts.knockback ?? 130;
     this.fromPlayer = opts.fromPlayer ?? true;
     this.dead = false;
     this.angle = Math.atan2(dy, dx);

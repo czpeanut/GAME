@@ -24,14 +24,14 @@ console.log('\ninstantaneous steps run without needing a tick');
   const c = new CutsceneRunner(
     [
       { type: 'setFlag', name: 'woke_up' },
-      { type: 'grantAbility', name: 'fire' },
+      { type: 'grantAbility', name: 'wallJump' },
       { type: 'call', fn: () => calls.push('ran') },
       { type: 'wait', seconds: 1 },
     ],
     { game: { story } }
   );
   check('a run of instant steps all execute before construction returns',
-    story.hasFlag('woke_up') && story.hasAbility('fire') && calls.join() === 'ran');
+    story.hasFlag('woke_up') && story.hasAbility('wallJump') && calls.join() === 'ran');
   check('the runner lands on the first step that actually needs time', c.index === 3);
 }
 

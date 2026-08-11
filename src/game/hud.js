@@ -60,6 +60,7 @@ export class HUD {
 
     this._health(ctx, p);
     this._dash(ctx, p);
+    this._weapon(ctx, p);
     this._progress(ctx, game);
     this._score(ctx, game);
 
@@ -116,6 +117,33 @@ export class HUD {
     ctx.fillText('DASH', x + w + 6, y + 5);
   }
 
+  // Which weapon is in hand, plus an aim-steadiness readout while holding
+  // fire with a ranged weapon out - the in-world reticle (Player renders it
+  // directly) shows *where* the spread currently is; this is just the HUD
+  // acknowledging the same number as text.
+  _weapon(ctx, p) {
+    const x = 12;
+    const y = 50;
+    const w = p.weapon;
+
+    ctx.font = `9px ${UI_FONT}`;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#8fa7d8';
+    ctx.fillText(w.name, x, y + 6);
+
+    if (w.type === 'ranged' && p.isAiming) {
+      const steady = 1 - clamp((p._currentSpread(w) - w.spreadMin) / (w.spreadMax - w.spreadMin), 0, 1);
+      const barY = y + 11;
+      const barW = 66;
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fillRect(x - 1, barY - 1, barW + 2, 6);
+      ctx.fillStyle = '#243050';
+      ctx.fillRect(x, barY, barW, 4);
+      ctx.fillStyle = steady > 0.92 ? '#8fffa0' : '#ffe9a8';
+      ctx.fillRect(x, barY, barW * steady, 4);
+    }
+  }
+
   // A thin bar showing how far through the level the player is.
   _progress(ctx, game) {
     const w = 120;
@@ -168,7 +196,8 @@ export class HUD {
       `grnd  ${p.grounded}  wall ${p.body.wallLeft ? 'L' : ''}${p.body.wallRight ? 'R' : ''}`,
       `dash  ${p.dashT.toFixed(2)} cd ${Math.max(0, p.dashCd).toFixed(2)}`,
       `ents  e:${game.enemies.length} b:${game.bullets.length} p:${game.particles.activeCount}`,
-      `abil  fire:${p.abilities.fire ? 1 : 0} dash:${p.abilities.dash ? 1 : 0} djmp:${p.abilities.doubleJump ? 1 : 0} wall:${p.abilities.wallJump ? 1 : 0}`,
+      `abil  dash:${p.abilities.dash ? 1 : 0} djmp:${p.abilities.doubleJump ? 1 : 0} wall:${p.abilities.wallJump ? 1 : 0}`,
+      `wpn   ${p.weaponId}  aim ${p.aimHoldT.toFixed(2)}`,
     ];
     ctx.font = '8px monospace';
     ctx.textAlign = 'left';
