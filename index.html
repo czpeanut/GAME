@@ -49,6 +49,114 @@
         pointer-events: none;
         user-select: none;
       }
+      /* Once touch controls are showing, the keyboard hint text just clutters
+         the bottom of the screen where the buttons now live. */
+      body.touch-active #hint {
+        display: none;
+      }
+
+      /* Touch controls: hidden until touch-controls.js confirms a coarse
+         (touch) pointer and adds .visible - a mouse/keyboard player never
+         sees this markup at all. */
+      #touch-controls {
+        display: none;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        touch-action: none;
+        z-index: 10;
+      }
+      #touch-controls.visible {
+        display: block;
+      }
+      .tc-btn {
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        border: 1px solid rgba(127, 212, 255, 0.35);
+        background: rgba(18, 24, 42, 0.55);
+        color: #cfe4ff;
+        font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        letter-spacing: 0.02em;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .tc-btn.active {
+        background: rgba(127, 212, 255, 0.38);
+        border-color: #7fd4ff;
+      }
+      .tc-dpad {
+        position: fixed;
+        left: max(14px, env(safe-area-inset-left));
+        bottom: max(14px, env(safe-area-inset-bottom));
+        display: grid;
+        grid-template-columns: 46px 46px 46px;
+        grid-template-rows: 46px 46px 46px;
+        gap: 4px;
+      }
+      .tc-dpad .tc-btn {
+        width: 46px;
+        height: 46px;
+      }
+      .tc-up {
+        grid-column: 2;
+        grid-row: 1;
+      }
+      .tc-left {
+        grid-column: 1;
+        grid-row: 2;
+      }
+      .tc-right {
+        grid-column: 3;
+        grid-row: 2;
+      }
+      .tc-down {
+        grid-column: 2;
+        grid-row: 3;
+      }
+      .tc-actions {
+        position: fixed;
+        right: max(14px, env(safe-area-inset-right));
+        bottom: max(14px, env(safe-area-inset-bottom));
+        display: grid;
+        grid-template-columns: 58px 58px;
+        grid-template-rows: 58px 58px;
+        gap: 10px;
+      }
+      .tc-actions .tc-btn {
+        width: 58px;
+        height: 58px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .tc-interact {
+        grid-column: 1;
+        grid-row: 1;
+      }
+      .tc-dash {
+        grid-column: 2;
+        grid-row: 1;
+      }
+      .tc-fire {
+        grid-column: 1;
+        grid-row: 2;
+      }
+      .tc-jump {
+        grid-column: 2;
+        grid-row: 2;
+      }
+      .tc-pause {
+        position: fixed;
+        top: max(10px, env(safe-area-inset-top));
+        right: max(10px, env(safe-area-inset-right));
+        width: 34px;
+        height: 34px;
+        font-size: 13px;
+      }
     </style>
   </head>
   <body>
@@ -56,6 +164,21 @@
     <div id="hint">
       A/D move &nbsp;·&nbsp; SPACE jump &nbsp;·&nbsp; J fire &nbsp;·&nbsp; SHIFT
       dash &nbsp;·&nbsp; ESC pause &nbsp;·&nbsp; M mute &nbsp;·&nbsp; F3 debug
+    </div>
+    <div id="touch-controls" aria-hidden="true">
+      <div class="tc-dpad">
+        <button class="tc-btn tc-up" data-action="up">▲</button>
+        <button class="tc-btn tc-left" data-action="left">◀</button>
+        <button class="tc-btn tc-right" data-action="right">▶</button>
+        <button class="tc-btn tc-down" data-action="down">▼</button>
+      </div>
+      <div class="tc-actions">
+        <button class="tc-btn tc-interact" data-action="interact">談</button>
+        <button class="tc-btn tc-dash" data-action="dash">衝刺</button>
+        <button class="tc-btn tc-fire" data-action="fire">攻擊</button>
+        <button class="tc-btn tc-jump" data-action="jump">跳</button>
+      </div>
+      <button class="tc-btn tc-pause" data-action="pause">Ⅱ</button>
     </div>
     <script type="module" src="./src/main.js"></script>
   </body>

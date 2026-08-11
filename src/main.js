@@ -1,6 +1,7 @@
 import { VIEW } from './game/constants.js';
 import { Game } from './game/game.js';
 import { Input } from './engine/input.js';
+import { setupTouchControls } from './engine/touch-controls.js';
 import { Loop } from './engine/loop.js';
 import { buildOpening, openingOnStart, OPENING_STARTING_ABILITIES } from './game/levels/opening.js';
 
@@ -35,6 +36,7 @@ window.addEventListener('resize', resize);
 resize();
 
 const input = new Input(window);
+setupTouchControls(input);
 
 const loop = new Loop({
   update: (dt) => game.update(dt),

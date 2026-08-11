@@ -42,8 +42,34 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
   （見「武器系統」）。
 - **瞄準方向**：攻擊時同時按住 `W`/`S`（上/下）可改變方向，含八方向斜射。
 - **踩踏**：從高處落下踩到敵人可造成傷害並彈起。
+- **觸控裝置**：在手機／平板上開啟時會自動偵測觸控並顯示畫面上的虛擬按鍵
+  （左下十字方向鍵、右下攻擊/跳躍/衝刺/互動鍵、右上暫停），滑鼠與鍵盤
+  裝置完全看不到、也不受影響。細節見下方「觸控操作」。
 - **衝刺**：八方向，帶無敵幀；落地或觸牆後恢復。
 - **對話中**：`W`/`S` 切換選項，`J`/`Space` 確認（文字未跑完時先跳過打字機效果）。
+
+## 觸控操作
+
+`src/engine/touch-controls.js` 在偵測到粗指標裝置（`matchMedia('(pointer: coarse)')`
+或 `'ontouchstart' in window`）時，自動顯示 `index.html` 裡 `#touch-controls`
+的畫面按鍵——左下十字方向鍵（含上/下，對應瞄準方向與對話選項切換）、
+右下四顆動作鍵（互動/衝刺/攻擊/跳躍），右上一顆暫停鍵。滑鼠與鍵盤裝置
+永遠看不到這層 UI，也不會載入任何監聽器。
+
+按鍵透過 `Input.touchDown(action)` / `touchUp(action)` 餵給與鍵盤、手把
+完全相同的 action 名稱（`left`/`fire`/`dash`...），下游的 `Player`、
+`DialogueScene` 等完全不知道輸入是從哪裡來的。每顆按鍵各自追蹤自己的
+pointer 狀態，用 `pointercapture` 確保手指滑出按鍵範圍再放開時，
+放開事件仍然會送達，不會卡在「一直按著」的狀態。
+
+### 觸控適配的取捨
+
+- 按鍵位置固定在畫面左右下角並考慮 `env(safe-area-inset-*)`，避開瀏海/
+  手勢列。
+- 按下時 `pointerdown` 立即呼叫 `touchDown()`，不像 `mouseup`/`click`
+  那樣要等放開才觸發——攻擊鍵持續按住才有意義（近戰揮砍冷卻、槍械瞄準）。
+- 這套系統假設橫向持機遊玩（與大部分側捲軸動作遊戲相同），直向模式下
+  按鍵仍然可用，只是可視空間較侷促。
 
 ## 手感設計（Game Feel）
 
@@ -227,7 +253,8 @@ src/
   main.js             進入點：畫布縮放、事件綁定、啟動迴圈、選擇要載入的關卡
   engine/             與遊戲內容無關的通用層
     loop.js           固定時間步長主迴圈（物理與畫面更新分離）
-    input.js          鍵盤 + 手把輸入，含按鍵邊緣偵測
+    input.js          鍵盤 + 手把 + 觸控輸入，含按鍵邊緣偵測
+    touch-controls.js 畫面觸控按鍵：偵測觸控裝置、綁定 pointer 事件到 input.js
     camera.js         死區、預看、邊界夾制、震動
     particles.js      物件池粒子系統（避免 GC 卡頓）
     audio.js          WebAudio 即時合成音效
@@ -351,7 +378,7 @@ npm test               # 全部單元測試（純 Node，無需瀏覽器）
 npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，且伺服器執行中）
 ```
 
-`npm test` 會執行 `test/` 底下所有 `*.test.mjs`（目前 12 個檔案、約 300 項）。
+`npm test` 會執行 `test/` 底下所有 `*.test.mjs`（目前 13 個檔案、約 300 項）。
 玩家控制器、關卡、劇情系統全部不依賴 DOM，因此整個模擬可在 Node 中無頭執行。
 這讓一些在瀏覽器裡很難驗證的問題可以被自動化檢查：
 
@@ -362,6 +389,7 @@ npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，�
 | `player.test.mjs` | coyote time、跳躍緩衝、可變跳躍高度、衝刺距離、無敵幀、數值穩定性 |
 | `abilities.test.mjs` | 能力閘門：鎖住時完全無效、解鎖瞬間立即生效、不影響舊有測試 |
 | `weapons.test.mjs` | 武器系統：近戰即時判定/自身冷卻、槍械瞄準擴散隨持握時間收斂並在放開時歸零、子彈數值繼承武器規格、撿拾與重生的持有狀態 |
+| `input.test.mjs` | 觸控輸入與鍵盤/手把共用同一套按下/持續/放開邊緣語意，來源互不干擾 |
 | `story.test.mjs` | 旗標、能力預設值、存讀檔（含毀損存檔、跨版本存檔的處理） |
 | `trigger.test.mjs` | StoryTrigger 的一次性/重複觸發、flag 綁定；Npc 的靠近判定 |
 | `dialogue.test.mjs` | 對話節點圖：分支、旗標副作用、打字機計時、異常節點的容錯 |
