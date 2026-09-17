@@ -106,7 +106,7 @@ canvas 或 DOM，可以直接在 Node 裡測試分支是否正確、旗標/變�
   start: 'ask',
   nodes: {
     ask: {
-      speaker: 'teacher',              // 對應 characters 裡的角色 id
+      speaker: 'hero',                 // 對應 characters 裡的角色 id
       lines: ['有問題想問我嗎？'],
       choices: [
         { text: '有，我想問……', next: 'good', flag: 'asked' },
@@ -114,14 +114,14 @@ canvas 或 DOM，可以直接在 Node 裡測試分支是否正確、旗標/變�
       ],
     },
     good: {
-      speaker: 'teacher',
+      speaker: 'hero',
       action: (stage, app) => {
         app.story.addVar('score', 1);   // 加分
         app.audio.correct();             // 回饋音
       },
       lines: ['很好，你問吧！'],
     },
-    shy: { speaker: 'teacher', lines: ['沒關係，想到再說。'] },
+    shy: { speaker: 'hero', lines: ['沒關係，想到再說。'] },
   },
 }
 ```
@@ -179,18 +179,25 @@ canvas 或 DOM，可以直接在 Node 裡測試分支是否正確、旗標/變�
 不會產生破洞，可以直接用工具從現成的整張立繪切出來：
 
 ```bash
-python3 tools/split-parts.py 原始立繪.png assets/characters/teacher \
-    head:0:0.25 torso:0.25:0.47 lower:0.47:1
+python3 tools/split-parts.py 原始立繪.png assets/characters/hero \
+    head:0:0.21 torso:0.21:0.43 lower:0.43:1
 ```
 
-目前 repo 裡的示範素材就是這樣切的（所以還沒有頭髮擺動、眨眼、嘴型——
-那幾個部件需要真正分層的美術）。**沒提供的部件會自動跳過**，所以可以先
-上這三張，之後再一張一張補，程式完全不用改。
+目前 repo 裡示範角色的 `head`/`torso`/`lower` 就是這樣切出來的，另外
+`arm_l`/`arm_r`/`hair_front` 是美術另外提供的分層；`eyes`/`mouth` 還沒有，
+所以眨眼跟嘴型目前是關著的。**沒提供的部件會自動跳過**，可以一張一張補，
+程式完全不用改。
+
+> ⚠️ 示範角色的 `全身` 完稿把手臂和頭髮也烙在裡面了（分層是額外提供的複本，
+> 而不是把它們從本體挖掉）。分層疊在自己的複本正上方，靜止時完全蓋住，
+> 小幅擺動時露出來的也是同一隻手臂，所以看不出破綻——**但擺動幅度大約只有
+> 現在的 2 倍上限**，再大就會在切線（脖子 0.21、腰 0.43）看到縫。
+> 要解除這個限制，就要請美術把本體被遮住的部分補畫出來。
 
 ### 關節位置要對得上你的構圖
 
 `demo-characters.js` 裡的 `RIG` 定義了每個關節在畫面高度的哪個比例
-（`NECK = 0.25`、`WAIST = 0.47` 等）。那組數字是給**全身站姿**用的；
+（`neck: 0.21`、`waist: 0.43` 等，每個角色各自量）。那組數字是給**全身站姿**用的；
 如果改成半身構圖，關節會落在完全不同的比例上，要跟著調整——關節位置
 錯了（例如頭的關節設在脖子上方）會變成不倒翁那樣搖頭。
 
@@ -234,14 +241,14 @@ jpg/png/webp 都可以——背景不需要透明底，用 jpg 檔案小很多�
 改任何程式碼。例如軀幹多畫一套體育服：
 
 ```
-assets/characters/teacher/torso/default.png
-assets/characters/teacher/torso/gym.png
+assets/characters/hero/torso/default.png
+assets/characters/hero/torso/gym.png
 ```
 
 對話腳本裡：
 
 ```js
-action: (stage) => stage.equip('teacher', { torso: 'gym' })
+action: (stage) => stage.equip('hero', { torso: 'gym' })
 ```
 
 表情同理——如果 RIG 裡有 `face` 部件，`stage.setExpression(id, 'happy')`
@@ -260,8 +267,8 @@ action: (stage) => stage.equip('teacher', { torso: 'gym' })
 ```js
 b => {
   stage.setBackground('classroom');
-  stage.show('teacher', 'left');
-  stage.show('mei', 'right');
+  stage.show('hero', 'center');
+  stage.show('mei', 'right');   // 多角色時
   stage.hide('mei');
 }
 ```

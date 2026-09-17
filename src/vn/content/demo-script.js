@@ -1,38 +1,39 @@
-// A short example practice script - "how do you phrase a question to your
-// teacher when you're stuck?" - written to exercise every feature the engine
-// offers, so it doubles as a template for writing real lesson content:
+// A short single-character practice script - "how do you phrase a question
+// when you're stuck?" - written to exercise every feature the engine offers,
+// so it doubles as a template for writing real lesson content:
 //
 //   - `speaker` is a character id (resolved to its display name and used to
-//     pick which portrait bounces while talking).
+//     pick which portrait plays the talking motion).
 //   - `action(stage, app)` is how a node reaches into the world: change the
 //     background, bring characters on/off stage, or touch story state
-//     (flags/vars) and play a feedback sound. (If a character ever has more
-//     than one image slot, this is also where you'd call
-//     stage.setExpression()/stage.equip() - see character.js - but the demo
-//     characters here are single-image, so neither is used below.)
+//     (flags/vars) and play a feedback sound. (With more than one variant
+//     per part you'd also call stage.equip()/setExpression() here.)
 //   - `choices` branch the conversation; each choice can carry its own
 //     `action`/`flag` exactly like a node can.
 //   - Nodes with no `next` and no `choices` end the conversation - reaching
 //     `recap` here is how this script finishes.
 //
-// Replace this with real lesson content: same shape, different lines/
-// choices. See character.js and stage.js for the full authoring API.
+// Replace this with real lesson content: same shape, different lines and
+// choices.
 export const DEMO_SCRIPT = {
   start: 'intro',
   nodes: {
     intro: {
-      speaker: 'teacher',
+      speaker: 'hero',
       action: (stage) => {
         stage.setBackground('classroom.jpg');
-        stage.show('teacher', 'left');
-        stage.show('mei', 'right');
+        stage.show('hero', 'center');
       },
-      lines: ['今天我們來練習：遇到聽不懂的地方，你會怎麼開口問？', '小安，你要不要示範一次？'],
+      lines: [
+        '欸，剛剛那題你是不是沒聽懂？',
+        '沒關係，我以前也這樣。不過你要先開口問，老師才知道要幫你哪裡。',
+        '來，先練習一次——你會怎麼跟老師說？',
+      ],
       next: 'ask_practice',
     },
     ask_practice: {
-      speaker: 'mei',
-      lines: ['嗯……我該怎麼說才好呢？'],
+      speaker: 'hero',
+      lines: ['假設現在下課，你走到講台前面。你開口第一句話是什麼？'],
       choices: [
         {
           text: '老師，這裡我還不太懂，可以麻煩您再說明一次嗎？',
@@ -44,43 +45,56 @@ export const DEMO_SCRIPT = {
       ],
     },
     good_response: {
-      speaker: 'teacher',
-      // No expression/outfit swap here - the demo characters are single-
-      // image (see demo-characters.js), so feedback is score + sound only.
-      // The portrait itself keeps breathing/bouncing throughout regardless.
+      speaker: 'hero',
       action: (stage, app) => {
         app.story.addVar('score', 1);
         app.audio.correct();
       },
-      lines: ['問得很好！具體說出「哪裡不懂」，老師才知道要怎麼幫你。', '這樣的提問方式，以後可以多用喔。'],
+      lines: [
+        '對，就是這樣！',
+        '你有講出「哪裡」不懂，老師就能直接從那邊接下去，不用猜。',
+        '這句以後可以一直用，換個科目也一樣好用。',
+      ],
       next: 'recap',
     },
     rude_response: {
-      speaker: 'teacher',
+      speaker: 'hero',
       action: (stage, app) => {
         app.story.addVar('attempts', 1);
         app.audio.incorrect();
       },
-      lines: ['這樣問，老師會不知道你卡在哪裡喔。', '要不要換個說法，具體說說是哪個部分不懂？'],
+      lines: [
+        '呃……這樣講，老師只會覺得你在嗆他。',
+        '而且他還是不知道你卡在哪一步。',
+        '重點是要講出「你卡住的那個地方」，要不要再試一次？',
+      ],
       choices: [
         { text: '再試一次', next: 'ask_practice' },
         { text: '先繼續', next: 'recap' },
       ],
     },
     silent_response: {
-      speaker: 'mei',
+      speaker: 'hero',
       action: (stage, app) => {
         app.story.addVar('attempts', 1);
       },
-      lines: ['不問的話，老師也不會知道你卡住了呢。', '沒關係，我們再試一次。'],
+      lines: [
+        '我知道，開口真的需要一點勇氣。',
+        '但不問的話，老師永遠不會知道你卡住了——他只會以為你都懂。',
+        '不用講得多漂亮，講出哪裡不懂就夠了。再試一次？',
+      ],
       choices: [
         { text: '再試一次', next: 'ask_practice' },
         { text: '先繼續', next: 'recap' },
       ],
     },
     recap: {
-      speaker: 'teacher',
-      lines: ['提問不用完美，敢開口、說清楚卡在哪裡，就已經很棒了。', '之後遇到不懂的地方，記得再試試看！'],
+      speaker: 'hero',
+      lines: [
+        '記住就三件事：講出哪一題、哪一步、你已經懂到哪裡。',
+        '提問不用完美，敢開口就贏一半了。',
+        '下次卡住，就照剛剛練的講一次看看。',
+      ],
     },
   },
 };
