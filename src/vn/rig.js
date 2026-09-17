@@ -23,14 +23,18 @@ import { Spring } from './spring.js';
 // them back up. Deliberately small: on rigid parts, big amplitudes are
 // exactly when the seams between pieces start to show.
 //
-// Both idle channels drive *rotation about a joint*, never a sideways
-// slide. A slide moves a part off the one it hangs from, so the waist or
-// neck visibly shears; rotating about the joint is what an actual body
-// does and cannot come apart.
+// Every channel drives either rotation about a joint or a scale centred on
+// one. Nothing translates a part relative to its parent, and that is a hard
+// rule, not a preference: the body bands are cut from one illustration and
+// butt up against each other with no overlap to spare, so ANY relative
+// translation slides one off the other and opens a clean line of background
+// at the seam. (A "nod" channel that lifted the head a couple of pixels on
+// each breath did exactly that - it tore the neck open once per breath. The
+// head already rises the right amount for free, because the chest expanding
+// underneath it displaces everything parented to the torso.)
 const BREATHE_SCALE = 0.03; // vertical scale delta - the dominant motion
 const TILT_RAD = 0.012; // ~0.7 degrees of slow postural drift
-const SWAY_RAD = 0.014; // ~0.8 degrees, second drift on its own period
-const NOD_FRAC = 0.003; // head lift on the breath, on top of what the chest already gives it
+const SWAY_RAD = 0.02; // ~1.15 degrees, second drift on its own period
 
 export class Rig {
   // `parts` is the draw order, back to front. Each entry:
@@ -40,7 +44,6 @@ export class Rig {
   //            y from the TOP - the joint this part rotates around
   //   breathe  0..1 weight - vertical scale about this part's own pivot
   //   tilt/sway  0..1 weights - rotation, from two independent slow drifts
-  //   nod      0..1 weight - vertical lift on the breath
   //   spring   { stiffness, damping, amount } - lag behind the parent's
   //            rotation instead of following it rigidly (hair, loose sleeves)
   //   blink    true: variant is driven by the blink timer (open/closed)
@@ -53,12 +56,11 @@ export class Rig {
       breathe: p.breathe ?? 0,
       tilt: p.tilt ?? 0,
       sway: p.sway ?? 0,
-      nod: p.nod ?? 0,
       blink: p.blink ?? false,
       talk: p.talk ?? false,
       springConfig: p.spring ?? null,
       spring: p.spring ? new Spring(p.spring) : null,
-      transform: { y: 0, angle: 0, scaleX: 1, scaleY: 1 },
+      transform: { angle: 0, scaleX: 1, scaleY: 1 },
       worldAngle: 0,
       // Product of every ancestor's scaleY. The renderer divides this back
       // out of the part's own scale so a parent's breath moves it without
@@ -92,7 +94,6 @@ export class Rig {
       const t = part.transform;
       const parent = part.parent ? this.byName.get(part.parent) : null;
 
-      t.y = -motion.breathe * part.nod * NOD_FRAC;
       t.scaleX = 1;
       t.scaleY = 1 + motion.breathe * part.breathe * BREATHE_SCALE;
       t.angle = motion.tilt * part.tilt * TILT_RAD + motion.sway * part.sway * SWAY_RAD;

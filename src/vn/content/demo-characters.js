@@ -12,7 +12,7 @@ import { Character } from '../character.js';
 // swings like a bobblehead. Hence buildRig() taking measurements rather
 // than one hard-coded list.
 //
-// The weights (breathe/tilt/nod/sway/bounce) and `spring` settings are the
+// The weights (breathe/tilt/sway) and `spring` settings are the
 // performance itself: torso carries the breath, head drifts and rides on
 // top of it, hair lags behind the head. See rig.js.
 function buildRig({ neck, waist, shoulderY, shoulderL, shoulderR, crown }) {
@@ -34,15 +34,16 @@ function buildRig({ neck, waist, shoulderY, shoulderL, shoulderR, crown }) {
     // Arms hang off the torso. They need a drift of their own, on a
     // different period, or they read as welded on: the spring alone only
     // lags them behind the torso, and the torso barely rotates, so the lag
-    // came out at a fraction of a degree.
-    { name: 'arm_l', parent: 'torso', pivot: [shoulderL, shoulderY], sway: 1, spring: { stiffness: 45, damping: 10, amount: 0.6 } },
-    { name: 'arm_r', parent: 'torso', pivot: [shoulderR, shoulderY], sway: -0.85, spring: { stiffness: 38, damping: 9, amount: 0.6 } },
+    // came out at a fraction of a degree. Opposite signs so the two arms
+    // never swing as one slab.
+    { name: 'arm_l', parent: 'torso', pivot: [shoulderL, shoulderY], sway: 1.3, spring: { stiffness: 45, damping: 10, amount: 0.6 } },
+    { name: 'arm_r', parent: 'torso', pivot: [shoulderR, shoulderY], sway: -1.15, spring: { stiffness: 38, damping: 9, amount: 0.6 } },
 
-    // Head rides on the torso. It is lifted by the chest expanding under
-    // it (that comes for free from the parent's scale); `nod` adds a touch
-    // more, and `sway` gives it a drift that is not just a multiple of the
-    // torso's.
-    { name: 'head', parent: 'torso', pivot: [0.5, neck], tilt: -0.3, sway: 0.35, nod: 1 },
+    // Head rides on the torso. It is already lifted by the chest expanding
+    // underneath it - that comes for free from the parent's scale, and is
+    // the only lift it should get. `sway` gives it a drift that is not
+    // just a multiple of the torso's.
+    { name: 'head', parent: 'torso', pivot: [0.5, neck], tilt: -0.3, sway: 0.35 },
 
     // Driven by the animation, not by `layers`: eyes swap open/closed on the
     // blink timer, mouth cycles closed/half/open while this character
@@ -60,15 +61,17 @@ function buildRig({ neck, waist, shoulderY, shoulderL, shoulderR, crown }) {
   ];
 }
 
-// Measured off this character's own artwork; the band cuts in
-// assets/characters/hero/ were made at the same neck/waist fractions:
+// Measured off this character's own artwork. The joints are at neck 0.21
+// and waist 0.43, but the band cuts deliberately OVERLAP across them:
 //   tools/split-parts.py <art>.png assets/characters/hero \
-//       head:0:0.21 torso:0.21:0.43 lower:0.43:1
+//       head:0:0.25 torso:0.19:0.47 lower:0.43:1
 //
-// Seams start to show past roughly 2x these motion amplitudes, because the
-// body bands are cut from a flat illustration with nothing painted behind
-// them - at 3x a gap opens at the collar. The rig's defaults sit well
-// inside that.
+// The overlap is what lets the seams survive motion. The bands come from a
+// flat illustration, so there is nothing painted behind them - butt-jointed
+// edges expose the background as a crisp line the moment two parts move
+// even a pixel apart. Each band reaching ~20px past its joint, drawn in
+// back-to-front order, means small movements happen inside the overlap and
+// never uncover anything.
 const HERO_RIG = buildRig({
   crown: 0.06,
   neck: 0.21,

@@ -73,7 +73,7 @@ export class PortraitRenderer {
     const pivotY = (part.pivot[1] - 1) * height;
     const scaleY = isSelf ? t.scaleY / (part.parentScaleY || 1) : t.scaleY;
 
-    ctx.translate(pivotX, pivotY + t.y * height);
+    ctx.translate(pivotX, pivotY);
     ctx.rotate(t.angle);
     ctx.scale(t.scaleX, scaleY);
     ctx.translate(-pivotX, -pivotY);
