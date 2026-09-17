@@ -10,10 +10,10 @@ console.log('\nchannels stay in their normalised range');
   let ok = true;
   for (let i = 0; i < 3000; i++) {
     m.update(1 / 60, i % 2 === 0);
-    if (Math.abs(m.breathe) > 1 || Math.abs(m.tilt) > 1 || Math.abs(m.sway) > 1) ok = false;
-    if (m.talkBounce < 0 || m.talkBounce > 1) ok = false;
+    if (m.breathe < 0 || m.breathe > 1) ok = false;
+    if (Math.abs(m.tilt) > 1 || Math.abs(m.sway) > 1) ok = false;
   }
-  check('breathe/tilt/sway stay within -1..1 and talkBounce within 0..1', ok);
+  check('breathe stays within 0..1 and tilt/sway within -1..1', ok);
 }
 
 console.log('\nthe three idle channels run on different periods');
@@ -67,24 +67,52 @@ console.log('\nblink: never gets permanently stuck closed or open over a long ru
   check('over a long run the eyes do close at least once', sawClosed);
 }
 
-console.log('\ntalk bounce: only active while speaking, never lifts the feet');
+console.log('\nbreathing is an asymmetric breath, not a sine');
 {
-  const m = new PortraitMotion();
-  m.update(1 / 60, false);
-  check('talkBounce is exactly 0 while not speaking', m.talkBounce === 0);
+  // A symmetric wave reads as a machine. The inhale must be quicker than
+  // the exhale, and there must be a rest at the bottom before the next one.
+  const period = 4;
+  const m = new PortraitMotion({ breathePeriod: period, inhaleFraction: 0.32, exhaleFraction: 0.48 });
+  m.t = 0; // pin the phase; the constructor randomises it
 
-  let sawMotion = false;
-  let everNegative = false;
-  for (let i = 0; i < 120; i++) {
-    m.update(1 / 60, true);
-    if (m.talkBounce > 0) sawMotion = true;
-    if (m.talkBounce < 0) everNegative = true;
+  const sample = [];
+  const step = period / 400;
+  for (let i = 0; i < 400; i++) {
+    sample.push(m.breathe);
+    m.update(step, false);
   }
-  check('talkBounce moves while speaking', sawMotion);
-  check('talkBounce never goes negative (bounces down into stance, not up)', !everNegative);
 
-  m.update(1 / 60, false);
-  check('talkBounce snaps back to 0 the instant speaking stops', m.talkBounce === 0);
+  check('rests at exactly 0 (a part at rest sits at its drawn size)', sample[0] === 0);
+  check('reaches a full inhale of 1', Math.max(...sample) > 0.999);
+  check('never goes below 0', Math.min(...sample) >= 0);
+
+  const peakAt = sample.indexOf(Math.max(...sample)) / sample.length;
+  check('peaks about a third of the way in (quick inhale)',
+    Math.abs(peakAt - 0.32) < 0.03, `peak at ${(peakAt * 100).toFixed(0)}% of the cycle`);
+
+  const atRest = sample.filter((v) => v === 0).length / sample.length;
+  check('spends a real pause at the bottom of the breath',
+    atRest > 0.15, `${(atRest * 100).toFixed(0)}% of the cycle at rest`);
+
+  // The exhale is longer than the inhale, so the fall is gentler than the rise.
+  const rise = Math.max(...sample.slice(0, 128).map((v, i, a) => (i ? v - a[i - 1] : 0)));
+  const fall = Math.min(...sample.slice(128, 320).map((v, i, a) => (i ? v - a[i - 1] : 0)));
+  check('the exhale is gentler than the inhale', Math.abs(fall) < rise,
+    `rise ${rise.toFixed(4)}/step vs fall ${Math.abs(fall).toFixed(4)}/step`);
+}
+
+console.log('\nthere is no whole-body bounce while speaking');
+{
+  // Regression: a ~4Hz body bounce used to run the entire time a character
+  // was speaking, which in a single-character script is always - it read as
+  // the character shaking. Talking belongs to the mouth.
+  const m = new PortraitMotion();
+  check('no talkBounce channel exists any more', m.talkBounce === undefined);
+
+  const before = { breathe: m.breathe, tilt: m.tilt, sway: m.sway };
+  m.speaking = true;
+  check('speaking does not change the idle channels',
+    m.breathe === before.breathe && m.tilt === before.tilt && m.sway === before.sway);
 }
 
 console.log('\nmouth: cycles only while speaking, and closes when done');

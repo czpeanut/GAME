@@ -24,19 +24,25 @@ function buildRig({ neck, waist, shoulderY, shoulderL, shoulderR, crown }) {
     // Hips down. The one part that genuinely does not move - it is what
     // makes everything above it read as motion rather than the whole image
     // drifting.
-    { name: 'lower', pivot: [0.5, 1], sway: 0.15 },
+    { name: 'lower', pivot: [0.5, 1] },
 
-    // Waist to shoulders. Carries the breath, pivoting at the waist so the
-    // chest rises while the hips stay put.
-    { name: 'torso', pivot: [0.5, waist], breathe: 1, tilt: 0.25, sway: 1, bounce: 0.4 },
+    // Waist to shoulders, pivoting at the waist. This is where almost all
+    // of the visible life comes from: the chest expands on the breath and
+    // lifts everything above it, and the slow tilt is the postural drift.
+    { name: 'torso', pivot: [0.5, waist], breathe: 1, tilt: 1 },
 
-    // Arms hang off the torso and lag behind it slightly.
-    { name: 'arm_l', parent: 'torso', pivot: [shoulderL, shoulderY], spring: { stiffness: 55, damping: 11, amount: 0.45 } },
-    { name: 'arm_r', parent: 'torso', pivot: [shoulderR, shoulderY], spring: { stiffness: 55, damping: 11, amount: 0.45 } },
+    // Arms hang off the torso. They need a drift of their own, on a
+    // different period, or they read as welded on: the spring alone only
+    // lags them behind the torso, and the torso barely rotates, so the lag
+    // came out at a fraction of a degree.
+    { name: 'arm_l', parent: 'torso', pivot: [shoulderL, shoulderY], sway: 1, spring: { stiffness: 45, damping: 10, amount: 0.6 } },
+    { name: 'arm_r', parent: 'torso', pivot: [shoulderR, shoulderY], sway: -0.85, spring: { stiffness: 38, damping: 9, amount: 0.6 } },
 
-    // Head rides on the torso: it gets the full idle tilt, plus `nod`
-    // lifting it slightly on each breath.
-    { name: 'head', parent: 'torso', pivot: [0.5, neck], tilt: 1, nod: 1, bounce: 1 },
+    // Head rides on the torso. It is lifted by the chest expanding under
+    // it (that comes for free from the parent's scale); `nod` adds a touch
+    // more, and `sway` gives it a drift that is not just a multiple of the
+    // torso's.
+    { name: 'head', parent: 'torso', pivot: [0.5, neck], tilt: -0.3, sway: 0.35, nod: 1 },
 
     // Driven by the animation, not by `layers`: eyes swap open/closed on the
     // blink timer, mouth cycles closed/half/open while this character

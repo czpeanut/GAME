@@ -6,30 +6,39 @@
 // and a head barely at all.
 //
 // Channels:
-//   breathe     slow sine - the breath cycle
-//   tilt        slow sine on a different period - idle head/posture drift
-//   sway        slow sine on a third period - weight shifting side to side
-//   talkBounce  fast, 0 unless speaking - the beat under a talking head
+//   breathe     0..1, the breath cycle - 0 at rest, 1 at full inhale
+//   tilt        slow sine - idle postural drift
+//   sway        slow sine on a different period - a second, independent drift
 //   blinking    boolean, short closures at randomised intervals
 //   mouthIndex  0..2 while speaking - which mouth shape to show
 //
-// The three idle periods are deliberately not multiples of each other. If
-// they were, they would repeatedly line up and the character would visibly
+// The idle periods are deliberately not multiples of each other. If they
+// were, they would repeatedly line up and the character would visibly
 // "pulse" on a fixed beat, which is the tell that something is looping.
+//
+// There is deliberately no "talking bounce" channel. An earlier version
+// bounced the whole body at ~4Hz while a character spoke, which in a
+// single-character script (where someone is always the speaker) never
+// stopped - it read as the character shaking, not talking. Talking is the
+// mouth's job; who is speaking is already shown by dimming everyone else.
 //
 // Pure timers - no canvas, no image loading - so all of this is testable in
 // plain Node.
 export class PortraitMotion {
   constructor({
-    breathePeriod = 3.7,
-    tiltPeriod = 6.2,
-    swayPeriod = 5.4,
+    breathePeriod = 4.2,
+    inhaleFraction = 0.32,
+    exhaleFraction = 0.48,
+    tiltPeriod = 7.5,
+    swayPeriod = 5.6,
     blinkEvery = [2.5, 5.5],
     blinkDuration = 0.12,
     doubleBlinkChance = 0.25,
     mouthFps = 9,
   } = {}) {
     this.breathePeriod = breathePeriod;
+    this.inhaleFraction = inhaleFraction;
+    this.exhaleFraction = exhaleFraction;
     this.tiltPeriod = tiltPeriod;
     this.swayPeriod = swayPeriod;
     this.blinkEvery = blinkEvery;
@@ -99,8 +108,23 @@ export class PortraitMotion {
     }
   }
 
+  // A real breath is not a sine: the inhale is quicker than the exhale, and
+  // there is a short rest before the next one. That asymmetry is most of
+  // what separates "breathing" from "oscillating" - a symmetric wave reads
+  // as a machine no matter how small you make it.
+  //
+  // Returns 0 at rest and 1 at full inhale, so a part at rest sits at
+  // exactly its drawn size rather than permanently contracted.
   get breathe() {
-    return Math.sin((this.t / this.breathePeriod) * Math.PI * 2);
+    const phase = (this.t / this.breathePeriod) % 1;
+    const { inhaleFraction: inhale, exhaleFraction: exhale } = this;
+    if (phase < inhale) {
+      return 0.5 - 0.5 * Math.cos((phase / inhale) * Math.PI);
+    }
+    if (phase < inhale + exhale) {
+      return 0.5 + 0.5 * Math.cos(((phase - inhale) / exhale) * Math.PI);
+    }
+    return 0; // the pause at the bottom of the breath
   }
 
   get tilt() {
@@ -109,13 +133,6 @@ export class PortraitMotion {
 
   get sway() {
     return Math.sin((this.t / this.swayPeriod) * Math.PI * 2 + 0.6);
-  }
-
-  // Always >= 0: a talking character settles into its stance on each beat
-  // rather than floating up off its feet.
-  get talkBounce() {
-    if (!this.speaking) return 0;
-    return Math.abs(Math.sin(this.t * 13));
   }
 
   get mouthIndex() {

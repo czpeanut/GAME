@@ -22,11 +22,15 @@ import { Spring } from './spring.js';
 // height so the rig stays resolution-independent; the renderer multiplies
 // them back up. Deliberately small: on rigid parts, big amplitudes are
 // exactly when the seams between pieces start to show.
-const BREATHE_SCALE = 0.022; // vertical scale delta
-const TILT_RAD = 0.026; // ~1.5 degrees
-const SWAY_FRAC = 0.008;
-const NOD_FRAC = 0.005;
-const BOUNCE_FRAC = 0.006;
+//
+// Both idle channels drive *rotation about a joint*, never a sideways
+// slide. A slide moves a part off the one it hangs from, so the waist or
+// neck visibly shears; rotating about the joint is what an actual body
+// does and cannot come apart.
+const BREATHE_SCALE = 0.03; // vertical scale delta - the dominant motion
+const TILT_RAD = 0.012; // ~0.7 degrees of slow postural drift
+const SWAY_RAD = 0.014; // ~0.8 degrees, second drift on its own period
+const NOD_FRAC = 0.003; // head lift on the breath, on top of what the chest already gives it
 
 export class Rig {
   // `parts` is the draw order, back to front. Each entry:
@@ -34,7 +38,9 @@ export class Rig {
   //   parent   name of the part this one hangs off (transforms compose)
   //   pivot    [x, y] as fractions of the portrait box, x from the left and
   //            y from the TOP - the joint this part rotates around
-  //   breathe/tilt/sway/nod/bounce   0..1 weights on each motion channel
+  //   breathe  0..1 weight - vertical scale about this part's own pivot
+  //   tilt/sway  0..1 weights - rotation, from two independent slow drifts
+  //   nod      0..1 weight - vertical lift on the breath
   //   spring   { stiffness, damping, amount } - lag behind the parent's
   //            rotation instead of following it rigidly (hair, loose sleeves)
   //   blink    true: variant is driven by the blink timer (open/closed)
@@ -48,13 +54,16 @@ export class Rig {
       tilt: p.tilt ?? 0,
       sway: p.sway ?? 0,
       nod: p.nod ?? 0,
-      bounce: p.bounce ?? 0,
       blink: p.blink ?? false,
       talk: p.talk ?? false,
       springConfig: p.spring ?? null,
       spring: p.spring ? new Spring(p.spring) : null,
-      transform: { x: 0, y: 0, angle: 0, scaleX: 1, scaleY: 1 },
+      transform: { y: 0, angle: 0, scaleX: 1, scaleY: 1 },
       worldAngle: 0,
+      // Product of every ancestor's scaleY. The renderer divides this back
+      // out of the part's own scale so a parent's breath moves it without
+      // stretching it - see PortraitRenderer._applyPose.
+      parentScaleY: 1,
     }));
 
     this.byName = new Map(this.parts.map((p) => [p.name, p]));
@@ -81,14 +90,16 @@ export class Rig {
   update(dt, motion) {
     for (const part of this.updateOrder) {
       const t = part.transform;
+      const parent = part.parent ? this.byName.get(part.parent) : null;
 
-      t.x = motion.sway * part.sway * SWAY_FRAC;
-      t.y = -motion.breathe * part.nod * NOD_FRAC + motion.talkBounce * part.bounce * BOUNCE_FRAC;
+      t.y = -motion.breathe * part.nod * NOD_FRAC;
       t.scaleX = 1;
       t.scaleY = 1 + motion.breathe * part.breathe * BREATHE_SCALE;
-      t.angle = motion.tilt * part.tilt * TILT_RAD;
+      t.angle = motion.tilt * part.tilt * TILT_RAD + motion.sway * part.sway * SWAY_RAD;
 
-      const parentAngle = part.parent ? (this.byName.get(part.parent)?.worldAngle ?? 0) : 0;
+      part.parentScaleY = parent ? parent.parentScaleY * parent.transform.scaleY : 1;
+
+      const parentAngle = parent?.worldAngle ?? 0;
 
       if (part.spring) {
         // The spring chases the parent's world angle. Subtracting the

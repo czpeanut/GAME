@@ -11,7 +11,6 @@ function motion(channels = {}) {
     breathe: 0,
     tilt: 0,
     sway: 0,
-    talkBounce: 0,
     blinking: false,
     mouthIndex: 0,
     ...channels,
@@ -140,6 +139,46 @@ console.log('\nrobustness');
   check('chainTo also survives a cycle', (() => {
     try { return cyclic.chainTo('a').length > 0; } catch { return false; }
   })());
+}
+
+console.log('\nsway is a second rotation driver, not a sideways slide');
+{
+  // Sliding a part sideways moves it off the one it hangs from, so the
+  // waist or neck visibly shears. Every idle channel must turn a joint.
+  const rig = new Rig([{ name: 'arm', sway: 1 }]);
+  rig.update(1 / 60, motion({ sway: 1 }));
+  const t = rig.byName.get('arm').transform;
+  check('sway produces rotation', t.angle !== 0);
+  check('sway produces no horizontal translation', t.x === undefined || t.x === 0);
+}
+
+console.log('\na parent\'s breathing scale moves children without stretching them');
+{
+  // The renderer divides parentScaleY back out of the part's own scale, so
+  // the chest expanding lifts the head rather than elongating the face.
+  const rig = new Rig([
+    { name: 'torso', pivot: [0.5, 0.43], breathe: 1 },
+    { name: 'head', parent: 'torso', pivot: [0.5, 0.21] },
+    { name: 'hair', parent: 'head', pivot: [0.5, 0.06] },
+  ]);
+  rig.update(1 / 60, motion({ breathe: 1 }));
+  const torso = rig.byName.get('torso');
+  const head = rig.byName.get('head');
+  const hair = rig.byName.get('hair');
+
+  check('the torso is the one that actually scales', torso.transform.scaleY > 1);
+  check('a root part inherits no scale', torso.parentScaleY === 1);
+  check('the head records the torso\'s scale as inherited',
+    Math.abs(head.parentScaleY - torso.transform.scaleY) < 1e-12);
+  check('the head does not scale on its own', head.transform.scaleY === 1);
+  check('inherited scale accumulates down the chain',
+    Math.abs(hair.parentScaleY - torso.transform.scaleY) < 1e-12);
+
+  // What the renderer will actually apply for each part.
+  const applied = (p) => p.transform.scaleY / p.parentScaleY;
+  check('the torso draws stretched', applied(torso) > 1);
+  check('the head draws at its natural height despite riding a stretching torso',
+    Math.abs(applied(head) - 1 / torso.transform.scaleY) < 1e-12);
 }
 
 console.log('\nchainTo: root-first, so the renderer can replay transforms in order');

@@ -45,7 +45,8 @@ export class PortraitRenderer {
       if (!entry.ready) continue;
 
       ctx.save();
-      for (const node of rig.chainTo(part.name)) this._applyPose(ctx, node, width, height);
+      const chain = rig.chainTo(part.name);
+      chain.forEach((node, i) => this._applyPose(ctx, node, width, height, i === chain.length - 1));
       ctx.drawImage(entry.image, -width / 2, -height, width, height);
       ctx.restore();
       drewAny = true;
@@ -58,14 +59,23 @@ export class PortraitRenderer {
   // Rotate/scale around the part's own pivot, then offset. Pivots arrive as
   // fractions of the box (x from the left, y from the top); the drawing
   // origin is the feet, so y has to be re-based onto that.
-  _applyPose(ctx, part, width, height) {
+  //
+  // `isSelf` marks the part actually being drawn, as opposed to an ancestor
+  // being replayed to position it. Ancestors apply their scale in full, so
+  // a breathing chest still lifts the head and arms riding on it - but the
+  // part itself divides that inherited scale back out, so it is *moved* by
+  // the breath without being *stretched* by it. Without this the whole
+  // upper body, face included, elongates every time the chest expands,
+  // which reads as rubber rather than breathing.
+  _applyPose(ctx, part, width, height, isSelf) {
     const t = part.transform;
     const pivotX = (part.pivot[0] - 0.5) * width;
     const pivotY = (part.pivot[1] - 1) * height;
+    const scaleY = isSelf ? t.scaleY / (part.parentScaleY || 1) : t.scaleY;
 
-    ctx.translate(pivotX + t.x * height, pivotY + t.y * height);
+    ctx.translate(pivotX, pivotY + t.y * height);
     ctx.rotate(t.angle);
-    ctx.scale(t.scaleX, t.scaleY);
+    ctx.scale(t.scaleX, scaleY);
     ctx.translate(-pivotX, -pivotY);
   }
 
