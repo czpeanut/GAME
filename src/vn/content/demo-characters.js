@@ -1,29 +1,34 @@
 import { Character } from '../character.js';
 
-// The simplest possible setup: one slot, one image per character. Breathing/
-// blink/talk-bounce (PortraitMotion) is applied to the whole portrait as a
-// transform, not per layer, so a single flat illustration already gets the
-// full "可動立繪" effect with zero extra art - no body/outfit/hair/face
-// layers needed unless you actually want costume or expression swaps later
-// (see the README's "進階：紙娃娃換裝" section for that path, which the
-// Character/Stage API already supports if you ever want it).
+// A two-piece breathing rig: `lower` (waist down - legs, feet) stays put,
+// `upper` (waist up - torso, arms, head) gets the idle breathing motion,
+// pivoted at `breathingSplit` (a fraction of the portrait's height from the
+// top). Both pieces are the SAME full-canvas image with everything outside
+// their own band made transparent - not separately cropped/resized - so at
+// rest (breatheScaleY === 1) they reconstruct the original artwork exactly,
+// with zero visible seam. See tools/split-breathing-seam.py for how these
+// were generated from a single flat illustration; splitting a flat image
+// this way needs no new drawing, just picking a seam row.
 //
-// No art file exists yet (that's on you to drop into
-// assets/characters/<id>/body/default.png - see the README), so right now
-// each character renders as a labelled placeholder block. That's
-// deliberate: branching/scoring is fully testable before a single image
-// exists.
+// The simplest possible setup for a *new* character is still one slot/one
+// image (`slots: ['body'], layers: { body: 'default' }`, no
+// `breathingSplit`) - that whole-image approximation is what
+// PortraitRenderer falls back to when breathingSplit is null. This two-piece
+// version is the upgrade once you want the chest to visibly rise instead of
+// the whole body pulsing.
 export function createDemoCharacters() {
   return {
     teacher: new Character('teacher', {
       name: '陳老師',
-      slots: ['body'],
-      layers: { body: 'default' },
+      slots: ['lower', 'upper'],
+      layers: { lower: 'default', upper: 'default' },
+      breathingSplit: 0.46,
     }),
     mei: new Character('mei', {
       name: '小安',
-      slots: ['body'],
-      layers: { body: 'default' },
+      slots: ['lower', 'upper'],
+      layers: { lower: 'default', upper: 'default' },
+      breathingSplit: 0.46,
     }),
   };
 }

@@ -66,6 +66,18 @@ console.log('\ndefaults');
   check('name falls back to the id when none is given', bare.name === 'x');
   check('expression defaults to neutral', bare.expression === 'neutral');
   check('slots default to an empty list', bare.slots.length === 0);
+  check('breathingSplit defaults to null (single rigid image)', bare.breathingSplit === null);
+}
+
+console.log('\nbreathingSplit (two-piece breathing rig)');
+{
+  const segmented = new Character('teacher', {
+    slots: ['lower', 'upper'],
+    layers: { lower: 'default', upper: 'default' },
+    breathingSplit: 0.46,
+  });
+  check('breathingSplit is stored as given', segmented.breathingSplit === 0.46);
+  check('a clone carries breathingSplit over', segmented.clone().breathingSplit === 0.46);
 }
 
 process.exit(summary() ? 0 : 1);

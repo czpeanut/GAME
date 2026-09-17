@@ -14,13 +14,22 @@
 // The asset file for a given (character, slot, variant) triple is expected
 // at `assets/characters/<characterId>/<slot>/<variant>.png` - see
 // portrait-renderer.js and the README for the full convention.
+//
+// `breathingSplit` opts a character into a two-piece breathing rig: if the
+// character has both an `upper` and a `lower` slot, PortraitRenderer applies
+// the idle breathing motion only to the `upper` piece, pivoted at this
+// fraction of the portrait's height (measured from the top) - so the chest
+// visibly rises while the legs stay planted, instead of the whole image
+// growing from its feet like a zoom. `null` (the default) means "just one
+// rigid image" - the simplest case, no art prep needed beyond one picture.
 export class Character {
-  constructor(id, { name, slots = [], layers = {}, expression = 'neutral' } = {}) {
+  constructor(id, { name, slots = [], layers = {}, expression = 'neutral', breathingSplit = null } = {}) {
     this.id = id;
     this.name = name ?? id;
     this.slots = [...slots];
     this.layers = { ...layers };
     this.expression = expression;
+    this.breathingSplit = breathingSplit;
   }
 
   getLayer(slot) {
@@ -52,6 +61,7 @@ export class Character {
       slots: this.slots,
       layers: this.layers,
       expression: this.expression,
+      breathingSplit: this.breathingSplit,
     });
   }
 }

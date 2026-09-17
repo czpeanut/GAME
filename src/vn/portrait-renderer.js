@@ -34,11 +34,19 @@ export class PortraitRenderer {
     const bounce = motion?.talkBounceY ?? 0;
     const blinking = motion?.blinking ?? false;
 
+    // A segmented character (breathingSplit set) keeps the outer transform
+    // rigid and applies breathing only to the 'upper' slot below, pivoted at
+    // the seam - a plain single-image character has no seam to pivot at, so
+    // the whole rigid image breathes together instead (a coarser but
+    // zero-extra-art fallback).
+    const segmented = character.breathingSplit != null;
+    const seamY = segmented ? -height * (1 - character.breathingSplit) : null;
+
     ctx.save();
     ctx.globalAlpha = dim ? 0.55 : 1;
     ctx.translate(x + sway, y + bounce);
     ctx.rotate(tilt);
-    ctx.scale(scale, scale * breatheY);
+    ctx.scale(scale, segmented ? scale : scale * breatheY);
 
     // Mirroring is applied per image draw, not to the whole transform - it
     // must only flip facing direction in actual art, never the placeholder
@@ -54,6 +62,15 @@ export class PortraitRenderer {
       const entry = this.images.get(src);
       if (entry.ready) {
         ctx.save();
+        if (slot === 'upper' && seamY != null) {
+          // Pivot exactly on the seam: the boundary between the two pieces
+          // never moves (no gap/overlap ever appears there), only the
+          // content above it stretches - reads as the chest rising from a
+          // fixed waist instead of the whole body zooming from its feet.
+          ctx.translate(0, seamY);
+          ctx.scale(1, breatheY);
+          ctx.translate(0, -seamY);
+        }
         if (mirror) ctx.scale(-1, 1);
         ctx.drawImage(entry.image, -width / 2, -height, width, height);
         ctx.restore();
