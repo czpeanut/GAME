@@ -1,36 +1,65 @@
-// Procedural "life" for an otherwise-static layered portrait - no frame
-// animation or Live2D-style mesh needed. Three cheap effects sell a
-// character as present rather than a pasted-on sticker:
+// Procedural "life" for an otherwise-static single-image portrait - no frame
+// animation, no Live2D-style mesh, no extra art needed. A flat illustration
+// can only ever be translated/scaled/rotated as one rigid piece, so a single
+// uniform "grow/shrink" pulse reads as a zoom, not breathing - the fix is to
+// combine several small, independently-timed motions instead of one:
 //
-//   - idle bob: a slow vertical sine wave, like breathing/weight-shifting.
+//   - breathe: a slow, small *vertical-only* scale (not uniform), pivoted at
+//     the feet (the portrait's own anchor point - see portrait-renderer.js),
+//     so the character stretches subtly upward rather than visibly growing
+//     from its center or shrinking toward it. Kept to ~1.5% so it reads as
+//     a chest rising, not a zoom.
+//   - sway: a slow horizontal drift, like a relaxed weight shift. Runs on a
+//     different period than breathing (5.4s vs 3.7s) so the two never fall
+//     into a synced, obviously-mechanical rhythm.
+//   - tilt: a tiny rotation around the feet, same reasoning as sway - real
+//     idle posture drifts in more than one axis at once, not just up/down.
 //   - blink: the eyes layer swaps to a closed variant for a short beat at
 //     randomised intervals, so a character never looks like a frozen photo.
-//   - talk bounce: a small scale pulse while `speaking` is true, timed to
-//     read as "this is the one talking" without needing lip-synced mouth art.
+//   - talk bounce: while `speaking` is true, a quick, small vertical bounce
+//     at a much faster tempo than the idle motions above - deliberately a
+//     different *kind* of movement (fast bounce vs. slow drift) so a talking
+//     character reads as visibly distinct from an idle one at a glance,
+//     without needing lip-synced mouth art.
 //
-// Pure timers - no canvas, no image loading - so the "should the eyes be
-// closed right now" question is testable in plain Node. PortraitRenderer
-// reads `blinking`/`bobY`/`talkScale` each frame and does the actual drawing.
+// This is a ceiling, not a full solution - genuinely convincing breathing
+// (chest visibly rising while legs stay put) needs either layered art (a
+// separate chest piece) or a short breathing frame sequence; a single rigid
+// image can only approximate it. This is that approximation, tuned to read
+// as "alive" rather than "pulsing."
+//
+// Pure timers - no canvas, no image loading - so "where should everything be
+// right now" is testable in plain Node. PortraitRenderer reads these getters
+// each frame and does the actual drawing.
 export class PortraitMotion {
   constructor({
-    bobAmplitude = 2.5,
-    bobPeriod = 3.4,
+    breatheAmplitude = 0.016,
+    breathePeriod = 3.7,
+    swayAmplitude = 3,
+    swayPeriod = 5.4,
+    tiltAmplitudeDeg = 0.9,
+    tiltPeriod = 6.2,
     blinkEvery = [2.5, 5.5],
     blinkDuration = 0.12,
-    talkPulseSpeed = 11,
-    talkPulseAmount = 0.02,
+    talkBounceSpeed = 13,
+    talkBounceAmount = 3.5,
   } = {}) {
-    this.bobAmplitude = bobAmplitude;
-    this.bobPeriod = bobPeriod;
+    this.breatheAmplitude = breatheAmplitude;
+    this.breathePeriod = breathePeriod;
+    this.swayAmplitude = swayAmplitude;
+    this.swayPeriod = swayPeriod;
+    this.tiltAmplitudeRad = (tiltAmplitudeDeg * Math.PI) / 180;
+    this.tiltPeriod = tiltPeriod;
     this.blinkEvery = blinkEvery;
     this.blinkDuration = blinkDuration;
-    this.talkPulseSpeed = talkPulseSpeed;
-    this.talkPulseAmount = talkPulseAmount;
+    this.talkBounceSpeed = talkBounceSpeed;
+    this.talkBounceAmount = talkBounceAmount;
 
     this.t = 0;
     this.blinkT = 0;
     this.nextBlinkAt = this._rollNextBlink();
     this.blinking = false;
+    this.speaking = false;
   }
 
   _rollNextBlink() {
@@ -55,14 +84,23 @@ export class PortraitMotion {
     }
   }
 
-  get bobY() {
-    return Math.sin((this.t / this.bobPeriod) * Math.PI * 2) * this.bobAmplitude;
+  get breatheScaleY() {
+    return 1 + Math.sin((this.t / this.breathePeriod) * Math.PI * 2) * this.breatheAmplitude;
   }
 
-  // Slightly-off-tempo pulse so several talking characters on screen at once
-  // don't all bounce in perfect unison.
-  get talkScale() {
-    if (!this.speaking) return 1;
-    return 1 + (Math.sin(this.t * this.talkPulseSpeed) * 0.5 + 0.5) * this.talkPulseAmount;
+  get swayX() {
+    return Math.sin((this.t / this.swayPeriod) * Math.PI * 2) * this.swayAmplitude;
+  }
+
+  get tiltRad() {
+    // Phase-offset from sway so the two don't peak at the same instant.
+    return Math.sin((this.t / this.tiltPeriod) * Math.PI * 2 + 1.7) * this.tiltAmplitudeRad;
+  }
+
+  // Always >= 0: the portrait's feet anchor never lifts, only bounces down
+  // and back - a talking character nodding into its stance, not floating.
+  get talkBounceY() {
+    if (!this.speaking) return 0;
+    return Math.abs(Math.sin(this.t * this.talkBounceSpeed)) * this.talkBounceAmount;
   }
 }

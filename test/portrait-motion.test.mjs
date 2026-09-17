@@ -1,24 +1,60 @@
-// PortraitMotion tests: idle bob, blink timing, talk pulse. Pure timers, no
-// canvas or image loading involved.
+// PortraitMotion tests: breathing scale, sway, tilt, blink timing, talk
+// bounce. Pure timers, no canvas or image loading involved.
 
 import { PortraitMotion } from '../src/vn/portrait-motion.js';
 import { check, summary } from './harness.mjs';
 
-console.log('\nbob: a periodic wave, not a one-shot');
+console.log('\nbreathe: a periodic vertical-scale wave, not a one-shot');
 {
-  const m = new PortraitMotion({ bobAmplitude: 4, bobPeriod: 2 });
-  check('bob starts at zero (sin(0))', Math.abs(m.bobY) < 1e-9);
+  const m = new PortraitMotion({ breatheAmplitude: 0.02, breathePeriod: 2 });
+  check('breathe starts at 1 (sin(0))', Math.abs(m.breatheScaleY - 1) < 1e-9);
   m.update(0.5); // a quarter period in
-  check('bob reaches its peak a quarter-period in', Math.abs(m.bobY - 4) < 1e-6, `${m.bobY}`);
+  check('breathe reaches its peak a quarter-period in',
+    Math.abs(m.breatheScaleY - 1.02) < 1e-6, `${m.breatheScaleY}`);
   m.update(0.5); // half period total
-  check('bob returns to zero at the half-period', Math.abs(m.bobY) < 1e-6, `${m.bobY}`);
-  check('bob never exceeds its configured amplitude', (() => {
-    const m2 = new PortraitMotion({ bobAmplitude: 4, bobPeriod: 2 });
+  check('breathe returns to 1 at the half-period', Math.abs(m.breatheScaleY - 1) < 1e-6);
+  check('breathe never exceeds its configured amplitude', (() => {
+    const m2 = new PortraitMotion({ breatheAmplitude: 0.02, breathePeriod: 2 });
     for (let i = 0; i < 240; i++) {
       m2.update(1 / 60);
-      if (Math.abs(m2.bobY) > 4 + 1e-6) return false;
+      if (Math.abs(m2.breatheScaleY - 1) > 0.02 + 1e-6) return false;
     }
     return true;
+  })());
+}
+
+console.log('\nsway and tilt: slow periodic drift on their own, different periods');
+{
+  const m = new PortraitMotion({ swayAmplitude: 5, swayPeriod: 4, tiltAmplitudeDeg: 2, tiltPeriod: 6 });
+  check('sway starts at zero', Math.abs(m.swayX) < 1e-9);
+  m.update(1); // a quarter of the 4s sway period
+  check('sway reaches its peak a quarter-period in', Math.abs(m.swayX - 5) < 1e-6, `${m.swayX}`);
+  check('sway never exceeds its configured amplitude', (() => {
+    const m2 = new PortraitMotion({ swayAmplitude: 5, swayPeriod: 4 });
+    for (let i = 0; i < 600; i++) {
+      m2.update(1 / 60);
+      if (Math.abs(m2.swayX) > 5 + 1e-6) return false;
+    }
+    return true;
+  })());
+  check('tilt never exceeds its configured amplitude (in radians)', (() => {
+    const maxRad = (2 * Math.PI) / 180;
+    const m2 = new PortraitMotion({ tiltAmplitudeDeg: 2, tiltPeriod: 6 });
+    for (let i = 0; i < 600; i++) {
+      m2.update(1 / 60);
+      if (Math.abs(m2.tiltRad) > maxRad + 1e-9) return false;
+    }
+    return true;
+  })());
+  check('sway and tilt are not in lockstep (different periods/phase)', (() => {
+    // If they moved identically this ratio would stay constant; it should
+    // drift since the two run on deliberately different periods.
+    const a = new PortraitMotion({ swayAmplitude: 5, swayPeriod: 4, tiltAmplitudeDeg: 2, tiltPeriod: 6 });
+    a.update(1);
+    const ratioAt1 = a.swayX / a.tiltRad;
+    a.update(1.3);
+    const ratioAt2_3 = a.swayX / a.tiltRad;
+    return Math.abs(ratioAt1 - ratioAt2_3) > 1e-3;
   })());
 }
 
@@ -51,19 +87,21 @@ console.log('\nblink: never gets permanently stuck closed or open over a long ru
   check('over a long run the eyes do close at least once', sawClosed);
 }
 
-console.log('\ntalk pulse: only active while speaking');
+console.log('\ntalk bounce: only active while speaking, and never lifts the feet');
 {
-  const m = new PortraitMotion({ talkPulseAmount: 0.1 });
+  const m = new PortraitMotion({ talkBounceAmount: 3.5 });
   m.update(1 / 60, false);
-  check('talkScale is exactly 1 while not speaking', m.talkScale === 1);
+  check('talkBounceY is exactly 0 while not speaking', m.talkBounceY === 0);
 
   m.update(1 / 60, true);
-  check('talkScale moves away from 1 while speaking', m.talkScale !== 1);
-  check('talkScale stays within the configured pulse amount',
-    Math.abs(m.talkScale - 1) <= 0.1 + 1e-9);
+  check('talkBounceY moves away from 0 while speaking', m.talkBounceY !== 0);
+  check('talkBounceY never goes negative (bounces down into stance, not up)',
+    m.talkBounceY >= 0);
+  check('talkBounceY stays within the configured amount',
+    m.talkBounceY <= 3.5 + 1e-9);
 
   m.update(1 / 60, false);
-  check('talkScale snaps back to 1 the instant speaking stops', m.talkScale === 1);
+  check('talkBounceY snaps back to 0 the instant speaking stops', m.talkBounceY === 0);
 }
 
 process.exit(summary() ? 0 : 1);

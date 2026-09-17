@@ -1,5 +1,6 @@
 // Draws a Character's currently-equipped paper-doll layers onto canvas, plus
-// the idle-life motion (bob/blink/talk) computed by PortraitMotion.
+// the idle-life motion (breathe/sway/tilt/blink/talk-bounce) computed by
+// PortraitMotion.
 //
 // Loading is fire-and-forget, same pattern as the old sprite-sheet loader:
 // an <img> starts loading the moment a layer is first requested and `ready`
@@ -20,18 +21,24 @@ export class PortraitRenderer {
     this.root = root;
   }
 
-  // (x, y) is the bottom-center anchor point (feet position). `mirror` flips
-  // the portrait horizontally without needing a second set of art.
+  // (x, y) is the bottom-center anchor point (feet position) - also the
+  // pivot every PortraitMotion signal rotates/scales around, so breathing
+  // stretches upward from planted feet instead of growing from the middle.
+  // `mirror` flips the portrait horizontally without needing a second set
+  // of art.
   draw(ctx, character, motion, { x, y, width = 220, height = 380, scale = 1, mirror = false, dim = false } = {}) {
     if (!character) return;
-    const bobY = motion?.bobY ?? 0;
-    const talkScale = motion?.talkScale ?? 1;
+    const sway = motion?.swayX ?? 0;
+    const tilt = motion?.tiltRad ?? 0;
+    const breatheY = motion?.breatheScaleY ?? 1;
+    const bounce = motion?.talkBounceY ?? 0;
     const blinking = motion?.blinking ?? false;
 
     ctx.save();
     ctx.globalAlpha = dim ? 0.55 : 1;
-    ctx.translate(x, y + bobY);
-    ctx.scale(scale * talkScale, scale * talkScale);
+    ctx.translate(x + sway, y + bounce);
+    ctx.rotate(tilt);
+    ctx.scale(scale, scale * breatheY);
 
     // Mirroring is applied per image draw, not to the whole transform - it
     // must only flip facing direction in actual art, never the placeholder
