@@ -7,10 +7,17 @@ import { Character } from '../src/vn/character.js';
 import { Stage } from '../src/vn/stage.js';
 import { check, summary } from './harness.mjs';
 
+const RIG = [
+  { name: 'torso', pivot: [0.5, 0.47], breathe: 1 },
+  { name: 'head', parent: 'torso', pivot: [0.5, 0.25], tilt: 1 },
+  { name: 'face', parent: 'head' },
+  { name: 'hair_front', parent: 'head', spring: { stiffness: 90, damping: 10, amount: 1 } },
+];
+
 function makeStage() {
   return new Stage({
-    teacher: new Character('teacher', { name: '陳老師', slots: ['body', 'outfit', 'face'] }),
-    mei: new Character('mei', { name: '小安', slots: ['body', 'outfit', 'face'] }),
+    teacher: new Character('teacher', { name: '陳老師', rig: RIG }),
+    mei: new Character('mei', { name: '小安', rig: RIG }),
   });
 }
 
@@ -57,11 +64,11 @@ console.log('\nexpression and outfit changes reach the underlying Character');
   s.setExpression('teacher', 'happy');
   check('setExpression forwards to the character', s.characters.teacher.expression === 'happy');
 
-  s.equip('mei', { outfit: 'gym' });
-  check('equip forwards to the character', s.characters.mei.getLayer('outfit') === 'gym');
+  s.equip('mei', { torso: 'gym' });
+  check('equip forwards to the character', s.characters.mei.getLayer('torso') === 'gym');
 
   check('touching an unknown character id does not throw', (() => {
-    try { s.setExpression('ghost', 'happy'); s.equip('ghost', { outfit: 'x' }); return true; }
+    try { s.setExpression('ghost', 'happy'); s.equip('ghost', { torso: 'x' }); return true; }
     catch { return false; }
   })());
 }
@@ -84,6 +91,29 @@ console.log('\nmotion: created on first entrance, speaking flag drives the talke
   s.setSpeaker(null);
   s.update(1 / 60);
   check('clearing the speaker stops everyone talking', s.motionFor('teacher').speaking === false);
+}
+
+console.log('\nrig: created per character on entrance and driven by update()');
+{
+  const s = makeStage();
+  check('no rig exists before a character has ever been shown',
+    s.rigFor('teacher') === undefined);
+
+  s.show('teacher', 'left');
+  s.show('mei', 'right');
+  check('a rig exists once shown', !!s.rigFor('teacher') && !!s.rigFor('mei'));
+  check('each character gets its own rig instance, not a shared one',
+    s.rigFor('teacher') !== s.rigFor('mei'));
+
+  // Run long enough for the slow idle channels to move off their start.
+  for (let i = 0; i < 120; i++) s.update(1 / 60);
+  const torso = s.rigFor('teacher').byName.get('torso');
+  check('update() drives the rig, not just the motion clock', torso.transform.scaleY !== 1);
+
+  const teacherTorso = s.rigFor('teacher').byName.get('torso').transform.scaleY;
+  const meiTorso = s.rigFor('mei').byName.get('torso').transform.scaleY;
+  check('two characters are not breathing in perfect unison', teacherTorso !== meiTorso,
+    `${teacherTorso} vs ${meiTorso}`);
 }
 
 process.exit(summary() ? 0 : 1);

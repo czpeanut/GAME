@@ -5,9 +5,10 @@
 劇情，而是讓學生在一個有回饋、有進度感的介面裡反覆練習「開口提問」與其他
 對話情境。
 
-**美術需求刻意壓到最低：每個角色畫一張立繪就能動起來**（見下方
-「立繪：最簡單的做法」），換裝/換表情的紙娃娃圖層是完全可選的進階功能，
-不需要也能用。
+角色立繪是拆成部件的**剪紙木偶**：軀幹呼吸、頭部微傾、頭髮延遲跟隨、
+眨眼、講話時的嘴型——用剛體變形做出主流遊戲動態立繪的簡化版，不需要
+Live2D 那類函式庫或授權。素材怎麼拆見下方「動態立繪：素材拆分規格」，
+**沒提供的部件會自動跳過**，可以只上三張圖先跑起來。
 
 使用純 HTML5 Canvas + 原生 ES Modules 開發，**執行時零相依套件**、不需要建置步驟。
 目前內建的對話腳本（`src/vn/content/`）只是一個示範模板——引擎本身不綁定任何學科，
@@ -60,7 +61,7 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 index.html            版面與 canvas 容器
 serve.js              零相依靜態伺服器（開發用）
 assets/
-  characters/<id>/<slot>/<variant>.png   角色立繪圖片（需自行提供，最簡單時每個角色只有一個 slot/variant）
+  characters/<id>/<部件>/<變體>.png        角色部件圖（需自行提供，最少 3 張即可跑）
   backgrounds/<檔名>                       場景背景圖（需自行提供，jpg/png/webp 皆可）
 src/
   main.js              進入點：畫布縮放、指標事件、啟動迴圈、載入哪個劇本
@@ -76,9 +77,11 @@ src/
     constants.js         內部渲染解析度、字型
     story-state.js        旗標（flag）+ 數值變數（分數/好感度等）+ 存讀檔
     dialogue-runner.js    對話節點圖狀態機（純函式，可離線測試）
-    character.js          單一角色目前顯示哪張／哪些圖層（純資料）
-    portrait-motion.js     立繪「活著」的動態：呼吸起伏、眨眼、說話時的彈動
-    portrait-renderer.js   把 Character + PortraitMotion 畫到 canvas，含無圖時的預留位置畫法
+    character.js          角色由哪些部件組成、每個部件顯示哪個變體（純資料）
+    spring.js              阻尼彈簧：頭髮/衣袖延遲跟隨的那條方程式（純數學）
+    rig.js                 剪紙木偶：部件階層、關節、把動態訊號變成各部件的變形（純數學）
+    portrait-motion.js     待機動態的時鐘：呼吸/微傾/搖擺/眨眼/嘴型訊號
+    portrait-renderer.js   依 Rig 算出的姿勢把各部件畫到 canvas，含缺圖時的退化處理
     stage.js               目前場上有誰、站哪裡、背景是什麼——腳本 action 操作的物件
     app.js                 頂層容器：canvas/input/audio/story/scene stack
     scenes/
@@ -86,7 +89,7 @@ src/
       dialogue-scene.js    對話框、立繪、選項的渲染與輸入處理
       end-scene.js          一段劇本結束後的畫面（含分數摘要、重玩）
     content/
-      demo-characters.js    示範角色（兩段式呼吸，無圖時會顯示標籤方塊）
+      demo-characters.js    示範角色與它們的 RIG 定義（同時是素材拆分規格的範例）
       demo-script.js         示範對話腳本，同時是撰寫新內容的範本
 test/                  單元測試（Node 原生，無需瀏覽器）+ 一份瀏覽器煙霧測試
 ```
@@ -130,119 +133,123 @@ canvas 或 DOM，可以直接在 Node 裡測試分支是否正確、旗標/變�
   `Stage` 實例（見下方），`app` 是頂層 `App`（可以拿到 `app.story`、
   `app.audio`）。想讓「換背景」「角色上場/下場」「加分/扣分」發生，都是
   在這裡呼叫對應方法，完全不需要修改 `DialogueRunner` 或 `DialogueScene`。
-  （如果角色有多張圖，也可以在這裡用 `stage.setExpression()`/
-  `stage.equip()` 換表情/換裝——見下方「進階：紙娃娃換裝」。）
+  （如果某個部件有多個變體，也可以在這裡用 `stage.equip()` 換裝、
+  `stage.setExpression()` 換表情——見下方「換裝與換表情」。）
 - `flag`：節點或選項進入時在 `StoryState` 標記一個布林旗標（例如用來記錄
   「這段有沒有練習過」）。
 - 沒有 `next` 也沒有 `choices` 的節點，會在播完最後一行後結束對話，
   進入結束畫面（`EndScene`）。
 
-## 立繪：最簡單的做法
+## 動態立繪：素材拆分規格
 
-呼吸起伏、說話彈動這些「可動」效果（`PortraitMotion`）是套用在**整張立繪
-圖片**上的一個 canvas transform，跟角色是不是拆成好幾個圖層完全無關。
-所以最省事的做法、也是示範內容（`demo-characters.js`）實際採用的做法：
+角色不是一張圖，而是一具**剪紙木偶（cut-out puppet）**：拆成好幾個部件，
+每個部件有自己的關節（pivot）、自己的父部件，以及自己對「待機動態」的
+反應強度。這是主流遊戲動態立繪的簡化版——真正的 Live2D／Spine 是
+**網格變形**（部件可以被拉彎、擠壓），我們用的是**剛體變形**（部件只能
+平移/旋轉/縮放，不會變形）。剛體做不到轉頭和柔體起伏，但呼吸、點頭、
+頭髮延遲擺動、眨眼、講話嘴型都做得到，而且不需要任何額外的函式庫或授權。
 
-**每個角色畫一張完整立繪（半身或全身皆可），存一個檔，結束。**
+### 每張圖的通用規則
 
-```js
-new Character('teacher', {
-  name: '陳老師',
-  slots: ['body'],                 // 只有一個槽位
-  layers: { body: 'default' },     // 只有一個變體
-});
-```
+- **同一個角色的每張部件圖，畫布尺寸必須完全一樣**，而且是「整張立繪的
+  畫布」——不是把部件裁切出來。該部件以外的區域留透明。這樣所有部件天生
+  對齊，程式只需要知道關節位置。
+- 去背 PNG（RGBA）。建議整體寬高比接近 300:540（約 9:16）。
+- ⚠️ **被遮住的地方要補畫**：手臂從身體上分離出來之後，手臂原本蓋住的那塊
+  身體會露出破洞，必須把被擋住的部分補完整。同理，瀏海後面的額頭、頭髮
+  後面的背部都要補。這是拆分素材最花工夫的地方，程式無法代勞。
 
-對應的圖片放在 `assets/characters/teacher/body/default.png`，圖片尺寸沒有
-強制規格（建議寬高比接近 300:540，即約 9:16 的半身/全身構圖），繪製時會
-依 `PortraitRenderer.draw()` 的 `width`/`height`（目前為 300×540，錨點在
-底部置中）縮放——要換這個尺寸就改 `src/vn/scenes/dialogue-scene.js` 裡的
-`PORTRAIT_W`/`PORTRAIT_H`。**圖還沒畫好、載入失敗、或根本沒提供，都會
-退化成一個標示角色名字的色塊**，不會白畫面、不會丟例外，所以整個系統
-在真的美術素材進來之前就可以完整測試與展示。
+### 部件清單
 
-背景圖放在 `assets/backgrounds/<檔名>`（例如 `assets/backgrounds/classroom.jpg`，
-`stage.setBackground('classroom.jpg')` 裡的字串就是完整檔名含副檔名，
-jpg/png/webp 都可以——背景本來就不需要透明底，用 jpg 通常檔案小很多）。
-任意尺寸都可以，畫面會用「置中裁切鋪滿」（CSS `background-size: cover`
-的效果）畫進 `VIEW`（540×960，`src/vn/constants.js`，直向 9:16——這是給
-手機直握用的介面，見下方「手機／畫面比例」），不會被拉伸變形，但長寬比
-跟 9:16 差太多的圖，上下或左右會被裁掉一些。
+由後往前的疊圖順序。`assets/characters/<角色id>/<部件>/<變體>.png`：
 
-`PortraitMotion`（`src/vn/portrait-motion.js`）是純計時邏輯（不碰
-canvas，可離線測試），組合了幾個各自獨立、週期不同的小動態，而不是單一個
-「一大一小」的縮放訊號——單一縮放訊號套在一張死板的圖片上，看起來就是
-單純的 zoom in/out，不會像在呼吸：
+| 部件 | 內容 | 關節（pivot） | 動態 |
+| --- | --- | --- | --- |
+| `hair_back` | 後腦的頭髮（長髮、馬尾尾端） | 頭頂 | 彈簧跟隨頭部，延遲最明顯 |
+| `lower` | 腰以下：臀、腿、鞋 | — | **完全不動**（其他部件的動態才有對比） |
+| `torso` | 腰到肩：軀幹＋衣服（**不含手臂、不含頭**） | 腰線 | 呼吸（垂直縮放）、輕微左右擺 |
+| `arm_l` / `arm_r` | 左右整隻手臂（肩到手） | 肩關節 | 彈簧跟隨軀幹，小幅延遲 |
+| `head` | 頭：臉底、耳、脖子（**不含五官、不含瀏海**） | 脖子根部 | 微傾、隨呼吸上下 |
+| `eyes` | 眼睛，需要 `open.png` 與 `closed.png` 兩張 | 跟著頭 | 眨眼時自動切換 |
+| `mouth` | 嘴，需要 `closed.png` / `half.png` / `open.png` 三張 | 跟著頭 | 說話時輪替＝嘴型 |
+| `hair_front` | 瀏海（蓋在臉前面） | 頭頂 | 彈簧跟隨頭部，比後髮硬一點 |
+| `accessory` | 眼鏡、髮飾等（可省略） | 跟著頭 | 剛性跟著頭 |
 
-- **呼吸**：垂直方向的小幅縮放（非等比），預設從腳底為基準點；如果角色
-  有設定 `breathingSplit`（見下方「兩段式呼吸」），則改成只作用在上半身、
-  基準點在腰線，看起來會更像「胸口在起伏」而不是整個人變大變小。
-- **搖擺**：很慢的左右水平飄移，週期跟呼吸不同，兩者不會同步。
-- **微傾**：一個很小角度的旋轉，週期又不一樣，避免動態只在單一軸線上。
-- **說話彈動**：`Stage` 依 `speaker` 決定誰在說話，說話中的角色會有一個
-  節奏明顯比待機動態快很多的小彈跳，一眼就能看出誰在講話。
-- **眨眼**（需要額外一張閉眼圖才會顯示效果，見下方「紙娃娃換裝」）。
-
-單張圖能做到的效果就是這樣——這是把好幾個小動態疊在一起、盡量不同步，
-但終究只是整張圖的平移/縮放/旋轉組合。真的要做到「胸口在動、腿完全不動」
-這種寫實度，需要下面這個功能。
-
-### 進階（可選但推薦）：兩段式呼吸
-
-**不需要多畫任何一筆**，只要把手上已經畫好的整張立繪，沿著一條自然的
-服裝分界線（西裝外套下擺、褲頭之類的地方，顏色單純不會被裁切線破壞）
-橫向切成上下兩塊，就能讓「呼吸」只作用在上半身、下半身完全不動：
+**最小可行組合**是 `lower` / `torso` / `head` 三張——這三張是純橫向切割，
+不會產生破洞，可以直接用工具從現成的整張立繪切出來：
 
 ```bash
-python3 tools/split-breathing-seam.py 角色原始立繪.png 0.46 \
-  assets/characters/teacher/upper/default.png \
-  assets/characters/teacher/lower/default.png
+python3 tools/split-parts.py 原始立繪.png assets/characters/teacher \
+    head:0:0.25 torso:0.25:0.47 lower:0.47:1
 ```
 
-第二個參數（`0.46`）是切割線在圖片高度的哪個比例（從頂端算），兩個輸出檔
-都跟原圖同樣大小，只是切割線以外的部分變透明——所以靜止時（呼吸縮放剛好
-是 1）兩塊拼起來會跟原圖完全一樣，沒有接縫。對應的角色設定：
+目前 repo 裡的示範素材就是這樣切的（所以還沒有頭髮擺動、眨眼、嘴型——
+那幾個部件需要真正分層的美術）。**沒提供的部件會自動跳過**，所以可以先
+上這三張，之後再一張一張補，程式完全不用改。
+
+### 關節位置要對得上你的構圖
+
+`demo-characters.js` 裡的 `RIG` 定義了每個關節在畫面高度的哪個比例
+（`NECK = 0.25`、`WAIST = 0.47` 等）。那組數字是給**全身站姿**用的；
+如果改成半身構圖，關節會落在完全不同的比例上，要跟著調整——關節位置
+錯了（例如頭的關節設在脖子上方）會變成不倒翁那樣搖頭。
+
+### 動態是怎麼組出來的
+
+`PortraitMotion`（`src/vn/portrait-motion.js`）只負責產生**正規化的訊號**
+（-1..1），不決定任何部件移動多少：
+
+- **breathe**：呼吸週期（3.7 秒）
+- **tilt**：待機姿勢漂移（6.2 秒）
+- **sway**：左右重心轉移（5.4 秒）
+- **talkBounce**：說話時的快節奏（只有說話中才有）
+- **blinking** / **mouthIndex**：眨眼與嘴型的切換
+
+三個待機週期**刻意不成整數倍**，否則它們會週期性地同時對齊，角色就會以
+一個固定節拍「一起一伏」，那是動畫在跑迴圈的破綻。每個角色的起始相位也是
+隨機的，所以同時站兩個人不會像同一個木偶播兩次。
+
+實際位移多少由 `Rig`（`src/vn/rig.js`）裡每個部件的權重決定，例如 `torso`
+的 `breathe: 1`、`head` 的 `tilt: 1`。而 `spring`（`src/vn/spring.js`）是
+讓這套看起來像現代遊戲的關鍵：頭髮不是跟著頭一起轉，而是**延遲、然後
+稍微甩過頭再回正**。這個跟隨感（follow-through）是剛體木偶最強的「活著」
+訊號，而且只靠一條阻尼彈簧方程式。
+
+### 背景圖
+
+放在 `assets/backgrounds/<檔名>`（例如 `assets/backgrounds/classroom.jpg`，
+`stage.setBackground('classroom.jpg')` 裡的字串就是完整檔名含副檔名，
+jpg/png/webp 都可以——背景不需要透明底，用 jpg 檔案小很多）。任意尺寸都
+可以，畫面會用「置中裁切鋪滿」（CSS `background-size: cover` 的效果）畫進
+`VIEW`（540×960，直向 9:16），不會被拉伸變形，但長寬比跟 9:16 差太多的圖
+上下或左右會被裁掉一些。
+
+**任何部件圖還沒畫好、載入失敗、或根本沒提供，都會自動跳過**；全部都沒有
+時會退化成一個標示角色名字的色塊，不會白畫面、不會丟例外——所以整個系統
+在美術完成之前就可以完整測試與展示。
+
+### 換裝與換表情
+
+每個部件可以有多個**變體**，換裝就是換掉某個部件目前顯示的變體，不需要
+改任何程式碼。例如軀幹多畫一套體育服：
+
+```
+assets/characters/teacher/torso/default.png
+assets/characters/teacher/torso/gym.png
+```
+
+對話腳本裡：
 
 ```js
-new Character('teacher', {
-  name: '陳老師',
-  slots: ['lower', 'upper'],               // 先畫下半身，上半身疊在上面
-  layers: { lower: 'default', upper: 'default' },
-  breathingSplit: 0.46,                     // 跟上面切割時用的比例一致
-});
+action: (stage) => stage.equip('teacher', { torso: 'gym' })
 ```
 
-`breathingSplit` 是 `null`（預設）就是「單張圖整體呼吸」的最簡單版本；
-設了之後 `PortraitRenderer` 會自動只把呼吸動態套在 `upper` 槽位、基準點
-精確落在切割線上——切割線本身永遠不動（不會裂開也不會重疊），只有切割線
-以上的部分會微微伸展。示範角色（`demo-characters.js`）目前就是用這個做法。
+表情同理——如果 RIG 裡有 `face` 部件，`stage.setExpression(id, 'happy')`
+就是把 `face` 換成 `happy.png`（跟直接 `equip` 是同一件事，只是讀起來
+比較直覺）。
 
-### 進階（可選）：紙娃娃換裝與換表情
-
-如果之後想要換裝或換表情，不需要改任何程式碼——`Character` 支援多個
-「槽位」（slot），對話腳本可以個別替換：
-
-```js
-new Character('teacher', {
-  name: '陳老師',
-  slots: ['body', 'outfit', 'hair', 'eyes', 'face', 'accessory'], // 由下到上疊畫
-  layers: { body: 'base', outfit: 'blazer', hair: 'short', eyes: 'calm', face: 'neutral' },
-});
-```
-
-`slots` 的順序就是疊圖順序（由下到上），對應的圖片放在
-`assets/characters/<id>/<slot>/<variant>.png`（例如
-`assets/characters/teacher/outfit/blazer.png`）。對話腳本透過
-`stage.equip(id, { outfit: 'casual' })` 換裝、`stage.setExpression(id, 'happy')`
-換表情（`setExpression` 其實就是把 `face` 槽位換成同名變體，兩者殊途同歸）。
-`eyes` 槽位若額外提供 `<variant>_closed.png`（例如
-`assets/characters/teacher/eyes/calm_closed.png`），眨眼時就會自動切換過去；
-沒提供就是不會眨眼，安全退化。
-
-這條路線的代價完全在美術端：每多一個槽位、每個槽位每多一個變體，就要多畫
-一張圖，而且**同一個角色的每張圖層必須共用完全一樣的畫布尺寸與姿勢/位置**
-才能疊得整齊。如果只是想要角色會呼吸、說話有反應，**完全不需要走這條路**，
-上面「最簡單的做法」就是完整的可動立繪體驗。
+因為部件是分開的，換裝只要重畫被換掉的那個部件，臉和頭髮不必跟著重畫——
+這正是拆分素材除了做動態以外的第二個好處。
 
 ## Stage：一段對話的舞台
 
@@ -279,13 +286,13 @@ b => {
 ## 撰寫新對話內容
 
 1. 在 `src/vn/content/` 仿照 `demo-characters.js` 定義自己的角色
-   （通常就是 `slots: ['body'], layers: { body: 'default' }`），仿照
-   `demo-script.js` 寫節點圖劇本。
+   （沿用那份 `RIG`，只換 `id`/`name` 即可），仿照 `demo-script.js`
+   寫節點圖劇本。
 2. 在 `src/main.js` 把 `charactersFactory`/`script` 換成你自己的。
-3. 有真的美術素材時，把每個角色的一張立繪存成
-   `assets/characters/<id>/body/default.png`，不需要改任何程式碼——
-   `PortraitRenderer` 會自動偵測到並開始顯示。想要換裝/換表情才需要用到
-   「進階：紙娃娃換裝」那條路線。
+3. 有美術素材時，依「動態立繪：素材拆分規格」把部件圖放進
+   `assets/characters/<id>/<部件>/`，不需要改任何程式碼——`PortraitRenderer`
+   會自動偵測到並開始顯示，還沒畫好的部件自動跳過。若構圖不是全身站姿，
+   記得調整 `RIG` 裡的關節比例。
 4. 想要「答對加分」「答錯溫和糾正、可以重試」這類練習機制，參考
    `demo-script.js` 裡 `good_response`/`rude_response`/`silent_response`
    三個節點的寫法：用 `action` 呼叫 `app.story.addVar()` 記分、
@@ -302,9 +309,11 @@ npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，�
 | 測試檔 | 驗證什麼 |
 | --- | --- |
 | `dialogue.test.mjs` | 對話節點圖：分支、旗標副作用、打字機計時、異常節點的容錯、DialogueScene 的按鍵/點擊輸入 |
-| `character.test.mjs` | 紙娃娃圖層：get/set/equip、換表情、clone 不互相污染 |
-| `portrait-motion.test.mjs` | 呼吸/搖擺/微傾波形、眨眼計時（含長跑不卡死）、說話彈動只在說話時作用 |
-| `stage.test.mjs` | 上場/下場/移動角色、換裝/換表情轉發、誰在說話的判定 |
+| `character.test.mjs` | 部件變體：get/set/equip、換表情、slots 由 rig 推導、clone 不互相污染 |
+| `rig.test.mjs` | 部件階層的變形累加、各通道權重、更新順序先父後子、彈簧跟隨、壞資料（缺父、循環）不當掉 |
+| `spring.test.mjs` | 彈簧的延遲與過衝、最終收斂、超大 dt（分頁喚醒）不爆炸 |
+| `portrait-motion.test.mjs` | 各通道值域、三個待機週期不同步、兩個角色不同相位、眨眼計時（含長跑不卡死）、嘴型只在說話時輪替 |
+| `stage.test.mjs` | 上場/下場/移動角色、換裝/換表情轉發、誰在說話的判定、每個角色有自己的 rig 且不同步 |
 | `story.test.mjs` | 旗標、數值變數、存讀檔（含毀損存檔、跨版本存檔的處理） |
 | `input.test.mjs` | 觸控/點擊輸入與鍵盤/手把共用同一套按下/持續/放開邊緣語意 |
 | `text.test.mjs` | 中文換行：行首/行尾禁則、中英混排、超長不可斷詞的強制斷行 |
@@ -327,11 +336,16 @@ npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，�
   `confirm()` 的計時器。
 - 想要更多場上位置（不只 left/center/right）：改 `stage.js` 的
   `slots` 物件與 `dialogue-scene.js` 的 `POSITION_X`。
-- 想要立繪有更豐富的動作（例如點頭、揮手）：`PortraitMotion` 目前只做
-  呼吸/搖擺/微傾/眨眼/說話彈動這幾種最基本、任何角色都適用的動態；角色
-  專屬的動作可以另外加欄位到 `PortraitMotion`，或是走「換圖層變體」的
-  路線（例如 `upper` 槽位切換成 `wave` 變體幾幀），也可以參考「兩段式
-  呼吸」的做法再切更多段（例如加一個獨立的 `head` 槽位做點頭動作）。
+- 想要立繪有更豐富的動作：先試著**把部件拆得更細**（例如把手臂拆成
+  上臂/前臂/手三段，各自給 `spring`），這是不動程式碼就能做到的；`RIG`
+  的欄位與權重都是資料。
+- 想要新的動態「種類」（例如點頭、視線跟隨滑鼠）：在 `PortraitMotion`
+  加一個新訊號，在 `rig.js` 加一個對應的權重欄位，兩邊都是純數學、可以
+  離線測試。視線跟隨還需要把瞳孔獨立成一個部件。
+- 想要真正的 Live2D 等級（轉頭、柔體變形）：那需要換成網格變形，也就是
+  導入 Live2D Cubism Web SDK 或 Spine 的 runtime（會失去目前零相依套件
+  的特性，商用還要確認授權），而且美術要拆到 50～150 層並用 Cubism
+  Editor 綁定。目前這套剛體木偶是不走那條路的情況下能做到的上限。
 
 ## 授權
 

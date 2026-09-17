@@ -153,14 +153,20 @@ export class DialogueScene extends Scene {
     for (const { position, character } of this.game.stage.onStage) {
       const x = VIEW.width * (POSITION_X[position] ?? 0.5);
       const dim = this.game.stage.speakerId && this.game.stage.speakerId !== character.id;
-      this.game.portraits.draw(ctx, character, this.game.stage.motionFor(character.id), {
-        x,
-        y: feetY,
-        width: PORTRAIT_W,
-        height: PORTRAIT_H,
-        mirror: position === 'right',
-        dim,
-      });
+      this.game.portraits.draw(
+        ctx,
+        character,
+        this.game.stage.rigFor(character.id),
+        this.game.stage.motionFor(character.id),
+        {
+          x,
+          y: feetY,
+          width: PORTRAIT_W,
+          height: PORTRAIT_H,
+          mirror: position === 'right',
+          dim,
+        }
+      );
     }
   }
 
