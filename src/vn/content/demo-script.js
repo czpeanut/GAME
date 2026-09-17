@@ -23,7 +23,7 @@ export const DEMO_SCRIPT = {
     intro: {
       speaker: 'teacher',
       action: (stage) => {
-        stage.setBackground('classroom');
+        stage.setBackground('classroom.jpg');
         stage.show('teacher', 'left');
         stage.show('mei', 'right');
       },

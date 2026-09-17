@@ -1,6 +1,7 @@
 import { Scene } from '../../engine/scene.js';
 import { DialogueRunner } from '../dialogue-runner.js';
 import { wrapText } from '../../engine/text.js';
+import { coverRect } from '../../engine/math.js';
 import { VIEW, FONT, NAME_FONT } from '../constants.js';
 
 const BOX_MARGIN = 24;
@@ -115,9 +116,17 @@ export class DialogueScene extends Scene {
   }
 
   _renderBackground(ctx) {
-    const bg = this.game.stage.background && this.game.images.get(`assets/backgrounds/${this.game.stage.background}.png`);
+    // `stage.background` is a full filename (e.g. 'classroom.jpg'), not a
+    // bare id - background art doesn't need transparency, so letting authors
+    // use whichever of .jpg/.png/.webp suits the image avoids forcing a
+    // lossless re-encode of a photo/painting just to match one convention.
+    const bg = this.game.stage.background && this.game.images.get(`assets/backgrounds/${this.game.stage.background}`);
     if (bg?.ready) {
-      ctx.drawImage(bg.image, 0, 0, VIEW.width, VIEW.height);
+      // "Cover" fit: crop to the render's aspect ratio instead of stretching
+      // - background art is rarely pre-cropped to exactly 960x540, and a
+      // naive stretch visibly squashes/stretches it.
+      const { sx, sy, sw, sh } = coverRect(bg.image.width, bg.image.height, VIEW.width, VIEW.height);
+      ctx.drawImage(bg.image, sx, sy, sw, sh, 0, 0, VIEW.width, VIEW.height);
       return;
     }
     // No background art (yet) - a soft gradient reads as a placeholder
@@ -130,7 +139,13 @@ export class DialogueScene extends Scene {
   }
 
   _renderPortraits(ctx) {
-    const feetY = VIEW.height - BOX_HEIGHT - BOX_MARGIN + 12;
+    // Feet anchor at the dialogue box's bottom edge, not its top - the box
+    // is drawn after portraits (see render()) so it naturally covers each
+    // character's legs, exactly like a real VN's characters standing
+    // "behind" the text box. Anchoring at the box's *top* instead (as an
+    // earlier version of this did) left too little headroom above for a
+    // PORTRAIT_H-tall image and clipped heads off the top of the canvas.
+    const feetY = VIEW.height - BOX_MARGIN;
     for (const { position, character } of this.game.stage.onStage) {
       const x = VIEW.width * (POSITION_X[position] ?? 0.5);
       const dim = this.game.stage.speakerId && this.game.stage.speakerId !== character.id;

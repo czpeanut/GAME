@@ -43,7 +43,7 @@ index.html            版面與 canvas 容器
 serve.js              零相依靜態伺服器（開發用）
 assets/
   characters/<id>/<slot>/<variant>.png   角色立繪圖片（需自行提供，最簡單時每個角色只有一個 slot/variant）
-  backgrounds/<id>.png                    場景背景圖（需自行提供）
+  backgrounds/<檔名>                       場景背景圖（需自行提供，jpg/png/webp 皆可）
 src/
   main.js              進入點：畫布縮放、指標事件、啟動迴圈、載入哪個劇本
   engine/              與對話內容無關的通用層
@@ -143,8 +143,12 @@ new Character('teacher', {
 退化成一個標示角色名字的色塊**，不會白畫面、不會丟例外，所以整個系統
 在真的美術素材進來之前就可以完整測試與展示。
 
-背景圖同理：`assets/backgrounds/<backgroundId>.png`，任意尺寸都會被拉伸
-鋪滿 `VIEW`（960×540，`src/vn/constants.js`）。
+背景圖放在 `assets/backgrounds/<檔名>`（例如 `assets/backgrounds/classroom.jpg`，
+`stage.setBackground('classroom.jpg')` 裡的字串就是完整檔名含副檔名，
+jpg/png/webp 都可以——背景本來就不需要透明底，用 jpg 通常檔案小很多）。
+任意尺寸都可以，畫面會用「置中裁切鋪滿」（CSS `background-size: cover`
+的效果）畫進 `VIEW`（960×540，`src/vn/constants.js`），不會被拉伸變形，
+但長寬比跟 16:9 差太多的圖，上下或左右會被裁掉一些。
 
 `PortraitMotion`（`src/vn/portrait-motion.js`）只做三種任何單張圖都適用、
 不需要額外素材的動態，純計時邏輯，不碰 canvas，可離線測試：

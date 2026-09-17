@@ -24,3 +24,15 @@ export function aabb(a, b) {
 
 export const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 export const easeInQuad = (t) => t * t;
+
+// The source rectangle to crop from a `srcW`x`srcH` image so that drawing it
+// into that rect fills a `dstW`x`dstH` destination with no letterboxing and
+// no distortion (CSS `background-size: cover`, centered) - used for
+// background art that was not pre-cropped to the render's exact aspect
+// ratio, instead of the naive "stretch to fill" that squashes it.
+export function coverRect(srcW, srcH, dstW, dstH) {
+  const scale = Math.max(dstW / srcW, dstH / srcH);
+  const sw = dstW / scale;
+  const sh = dstH / scale;
+  return { sx: (srcW - sw) / 2, sy: (srcH - sh) / 2, sw, sh };
+}
