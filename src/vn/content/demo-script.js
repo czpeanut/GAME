@@ -5,9 +5,11 @@
 //   - `speaker` is a character id (resolved to its display name and used to
 //     pick which portrait bounces while talking).
 //   - `action(stage, app)` is how a node reaches into the world: change the
-//     background, bring characters on/off stage, change an expression or
-//     swap a paper-doll layer, or touch story state (flags/vars) and play a
-//     feedback sound.
+//     background, bring characters on/off stage, or touch story state
+//     (flags/vars) and play a feedback sound. (If a character ever has more
+//     than one image slot, this is also where you'd call
+//     stage.setExpression()/stage.equip() - see character.js - but the demo
+//     characters here are single-image, so neither is used below.)
 //   - `choices` branch the conversation; each choice can carry its own
 //     `action`/`flag` exactly like a node can.
 //   - Nodes with no `next` and no `choices` end the conversation - reaching
@@ -43,12 +45,10 @@ export const DEMO_SCRIPT = {
     },
     good_response: {
       speaker: 'teacher',
+      // No expression/outfit swap here - the demo characters are single-
+      // image (see demo-characters.js), so feedback is score + sound only.
+      // The portrait itself keeps breathing/bouncing throughout regardless.
       action: (stage, app) => {
-        stage.setExpression('teacher', 'happy');
-        // Paper-doll demo: a happier beat swaps the teacher into a more
-        // relaxed outfit layer, the same call a script would use for any
-        // scripted costume change.
-        stage.equip('teacher', { outfit: 'casual' });
         app.story.addVar('score', 1);
         app.audio.correct();
       },
@@ -58,7 +58,6 @@ export const DEMO_SCRIPT = {
     rude_response: {
       speaker: 'teacher',
       action: (stage, app) => {
-        stage.setExpression('teacher', 'concerned');
         app.story.addVar('attempts', 1);
         app.audio.incorrect();
       },
@@ -71,7 +70,6 @@ export const DEMO_SCRIPT = {
     silent_response: {
       speaker: 'mei',
       action: (stage, app) => {
-        stage.setExpression('mei', 'shy');
         app.story.addVar('attempts', 1);
       },
       lines: ['不問的話，老師也不會知道你卡住了呢。', '沒關係，我們再試一次。'],
@@ -82,7 +80,6 @@ export const DEMO_SCRIPT = {
     },
     recap: {
       speaker: 'teacher',
-      action: (stage) => stage.setExpression('teacher', 'neutral'),
       lines: ['提問不用完美，敢開口、說清楚卡在哪裡，就已經很棒了。', '之後遇到不懂的地方，記得再試試看！'],
     },
   },

@@ -1,9 +1,13 @@
 # 想問就問
 
 給國高中生用的對話練習引擎，參考主流戀愛對話遊戲（Galgame/乙女遊戲）的呈現方式：
-會眨眼、會呼吸、說話時會有反應的**可動立繪**，可換裝、換表情的**紙娃娃**角色，
-搭配分支選項的對話劇本——但目的不是戀愛劇情，而是讓學生在一個有回饋、
-有進度感的介面裡反覆練習「開口提問」與其他對話情境。
+會呼吸、說話時會有反應的**可動立繪**，搭配分支選項的對話劇本——但目的不是戀愛
+劇情，而是讓學生在一個有回饋、有進度感的介面裡反覆練習「開口提問」與其他
+對話情境。
+
+**美術需求刻意壓到最低：每個角色畫一張立繪就能動起來**（見下方
+「立繪：最簡單的做法」），換裝/換表情的紙娃娃圖層是完全可選的進階功能，
+不需要也能用。
 
 使用純 HTML5 Canvas + 原生 ES Modules 開發，**執行時零相依套件**、不需要建置步驟。
 目前內建的對話腳本（`src/vn/content/`）只是一個示範模板——引擎本身不綁定任何學科，
@@ -38,7 +42,7 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 index.html            版面與 canvas 容器
 serve.js              零相依靜態伺服器（開發用）
 assets/
-  characters/<id>/<slot>/<variant>.png   角色紙娃娃圖層（需自行提供）
+  characters/<id>/<slot>/<variant>.png   角色立繪圖片（需自行提供，最簡單時每個角色只有一個 slot/variant）
   backgrounds/<id>.png                    場景背景圖（需自行提供）
 src/
   main.js              進入點：畫布縮放、指標事件、啟動迴圈、載入哪個劇本
@@ -54,7 +58,7 @@ src/
     constants.js         內部渲染解析度、字型
     story-state.js        旗標（flag）+ 數值變數（分數/好感度等）+ 存讀檔
     dialogue-runner.js    對話節點圖狀態機（純函式，可離線測試）
-    character.js          單一角色的紙娃娃圖層狀態（純資料）
+    character.js          單一角色目前顯示哪張／哪些圖層（純資料）
     portrait-motion.js     立繪「活著」的動態：呼吸起伏、眨眼、說話時的彈動
     portrait-renderer.js   把 Character + PortraitMotion 畫到 canvas，含無圖時的預留位置畫法
     stage.js               目前場上有誰、站哪裡、背景是什麼——腳本 action 操作的物件
@@ -64,7 +68,7 @@ src/
       dialogue-scene.js    對話框、立繪、選項的渲染與輸入處理
       end-scene.js          一段劇本結束後的畫面（含分數摘要、重玩）
     content/
-      demo-characters.js    示範角色（無圖時會顯示標籤方塊）
+      demo-characters.js    示範角色（單張圖，無圖時會顯示標籤方塊）
       demo-script.js         示範對話腳本，同時是撰寫新內容的範本
 test/                  單元測試（Node 原生，無需瀏覽器）+ 一份瀏覽器煙霧測試
 ```
@@ -91,10 +95,8 @@ canvas 或 DOM，可以直接在 Node 裡測試分支是否正確、旗標/變�
     good: {
       speaker: 'teacher',
       action: (stage, app) => {
-        stage.setExpression('teacher', 'happy');   // 換表情
-        stage.equip('teacher', { outfit: 'casual' }); // 換裝（紙娃娃）
-        app.story.addVar('score', 1);                // 加分
-        app.audio.correct();                          // 回饋音
+        app.story.addVar('score', 1);   // 加分
+        app.audio.correct();             // 回饋音
       },
       lines: ['很好，你問吧！'],
     },
@@ -108,18 +110,54 @@ canvas 或 DOM，可以直接在 Node 裡測試分支是否正確、旗標/變�
   若填的字串不是任何角色 id，會直接顯示原字串（適合旁白/無名角色）。
 - `action(stage, app)`：節點或選項進入時執行一次的副作用。`stage` 是
   `Stage` 實例（見下方），`app` 是頂層 `App`（可以拿到 `app.story`、
-  `app.audio`）。想讓「換背景」「角色上場/下場」「換表情」「換裝」
-  「加分/扣分」發生，都是在這裡呼叫對應方法，完全不需要修改
-  `DialogueRunner` 或 `DialogueScene`。
+  `app.audio`）。想讓「換背景」「角色上場/下場」「加分/扣分」發生，都是
+  在這裡呼叫對應方法，完全不需要修改 `DialogueRunner` 或 `DialogueScene`。
+  （如果角色有多張圖，也可以在這裡用 `stage.setExpression()`/
+  `stage.equip()` 換表情/換裝——見下方「進階：紙娃娃換裝」。）
 - `flag`：節點或選項進入時在 `StoryState` 標記一個布林旗標（例如用來記錄
   「這段有沒有練習過」）。
 - 沒有 `next` 也沒有 `choices` 的節點，會在播完最後一行後結束對話，
   進入結束畫面（`EndScene`）。
 
-## 紙娃娃與可動立繪
+## 立繪：最簡單的做法
 
-`Character`（`src/vn/character.js`）只記錄「這個角色目前每個圖層槽位
-（slot）穿/戴哪個變體（variant）」，例如：
+呼吸起伏、說話彈動這些「可動」效果（`PortraitMotion`）是套用在**整張立繪
+圖片**上的一個 canvas transform，跟角色是不是拆成好幾個圖層完全無關。
+所以最省事的做法、也是示範內容（`demo-characters.js`）實際採用的做法：
+
+**每個角色畫一張完整立繪（半身或全身皆可），存一個檔，結束。**
+
+```js
+new Character('teacher', {
+  name: '陳老師',
+  slots: ['body'],                 // 只有一個槽位
+  layers: { body: 'default' },     // 只有一個變體
+});
+```
+
+對應的圖片放在 `assets/characters/teacher/body/default.png`，圖片尺寸沒有
+強制規格（建議寬高比接近 260:460，即約 9:16 的半身/全身構圖），繪製時會
+依 `PortraitRenderer.draw()` 的 `width`/`height`（目前為 260×460，錨點在
+底部置中）縮放——要換這個尺寸就改 `src/vn/scenes/dialogue-scene.js` 裡的
+`PORTRAIT_W`/`PORTRAIT_H`。**圖還沒畫好、載入失敗、或根本沒提供，都會
+退化成一個標示角色名字的色塊**，不會白畫面、不會丟例外，所以整個系統
+在真的美術素材進來之前就可以完整測試與展示。
+
+背景圖同理：`assets/backgrounds/<backgroundId>.png`，任意尺寸都會被拉伸
+鋪滿 `VIEW`（960×540，`src/vn/constants.js`）。
+
+`PortraitMotion`（`src/vn/portrait-motion.js`）只做三種任何單張圖都適用、
+不需要額外素材的動態，純計時邏輯，不碰 canvas，可離線測試：
+
+- **呼吸/晃動**：一個緩慢的正弦波垂直位移。
+- **說話彈動**：`Stage` 依 `speaker` 決定誰在說話，說話中的角色會有一點點
+  縮放脈動，讓玩家一眼看出誰在講話。
+- **眨眼**（需要額外一張閉眼圖才會顯示效果，見下方進階段落）。
+
+### 進階（可選）：紙娃娃換裝與換表情
+
+如果之後想要換裝或換表情，不需要改任何程式碼——`Character` 支援多個
+「槽位」（slot），對話腳本可以個別替換：
 
 ```js
 new Character('teacher', {
@@ -129,39 +167,19 @@ new Character('teacher', {
 });
 ```
 
-`slots` 的順序就是疊圖順序（由下到上）。對話腳本透過 `stage.equip(id, {...})`
-換裝、`stage.setExpression(id, name)` 換表情（`setExpression` 其實就是把
-`face` 槽位換成同名變體，兩者殊途同歸）。
+`slots` 的順序就是疊圖順序（由下到上），對應的圖片放在
+`assets/characters/<id>/<slot>/<variant>.png`（例如
+`assets/characters/teacher/outfit/blazer.png`）。對話腳本透過
+`stage.equip(id, { outfit: 'casual' })` 換裝、`stage.setExpression(id, 'happy')`
+換表情（`setExpression` 其實就是把 `face` 槽位換成同名變體，兩者殊途同歸）。
+`eyes` 槽位若額外提供 `<variant>_closed.png`（例如
+`assets/characters/teacher/eyes/calm_closed.png`），眨眼時就會自動切換過去；
+沒提供就是不會眨眼，安全退化。
 
-`PortraitMotion`（`src/vn/portrait-motion.js`）是讓立繪「動起來」的純計時邏輯，
-不碰 canvas，可以離線測試：
-
-- **呼吸/晃動**：一個緩慢的正弦波垂直位移。
-- **眨眼**：`eyes` 槽位每隔一段隨機時間，短暫換成 `<variant>_closed` 圖層；
-  沒有提供閉眼圖的角色就是不會眨眼，安全退化，不會出錯。
-- **說話彈動**：`Stage` 依 `speaker` 決定誰在說話，說話中的角色會有一點點
-  縮放脈動，讓玩家一眼看出誰在講話。
-
-`PortraitRenderer`（`src/vn/portrait-renderer.js`）才是真正碰 canvas 的地方：
-依序畫出每個槽位目前的圖片。**任何一張圖還沒載入、載入失敗、或根本沒提供，
-都會退化成一個標示角色名字的色塊**，不會白畫面、不會丟例外——所以整個系統
-在真的美術素材進來之前就可以完整測試與展示（見 `src/vn/content/demo-characters.js`）。
-
-### 美術素材規格
-
-```
-assets/characters/<characterId>/<slot>/<variant>.png
-assets/backgrounds/<backgroundId>.png
-```
-
-例如老師的「西裝外套」外觀圖要放在
-`assets/characters/teacher/outfit/blazer.png`；`eyes` 槽位若要支援眨眼，
-額外提供 `assets/characters/teacher/eyes/calm_closed.png`。圖片尺寸沒有
-強制規格，繪製時會依 `PortraitRenderer.draw()` 的 `width`/`height`
-（目前為 260×460，錨點在底部置中）縮放——之後要換掉這個尺寸只需要改
-`src/vn/scenes/dialogue-scene.js` 裡的 `PORTRAIT_W`/`PORTRAIT_H`。
-
-背景圖同理，任意尺寸都會被拉伸鋪滿 `VIEW`（960×540，`src/vn/constants.js`）。
+這條路線的代價完全在美術端：每多一個槽位、每個槽位每多一個變體，就要多畫
+一張圖，而且**同一個角色的每張圖層必須共用完全一樣的畫布尺寸與姿勢/位置**
+才能疊得整齊。如果只是想要角色會呼吸、說話有反應，**完全不需要走這條路**，
+上面「最簡單的做法」就是完整的可動立繪體驗。
 
 ## Stage：一段對話的舞台
 
@@ -198,11 +216,13 @@ b => {
 ## 撰寫新對話內容
 
 1. 在 `src/vn/content/` 仿照 `demo-characters.js` 定義自己的角色
-   （`name`/`slots`/`layers`），仿照 `demo-script.js` 寫節點圖劇本。
+   （通常就是 `slots: ['body'], layers: { body: 'default' }`），仿照
+   `demo-script.js` 寫節點圖劇本。
 2. 在 `src/main.js` 把 `charactersFactory`/`script` 換成你自己的。
-3. 有真的美術素材時，依上方「美術素材規格」把 PNG 放進
-   `assets/characters/`、`assets/backgrounds/`，不需要改任何程式碼——
-   `PortraitRenderer` 會自動偵測到並開始顯示。
+3. 有真的美術素材時，把每個角色的一張立繪存成
+   `assets/characters/<id>/body/default.png`，不需要改任何程式碼——
+   `PortraitRenderer` 會自動偵測到並開始顯示。想要換裝/換表情才需要用到
+   「進階：紙娃娃換裝」那條路線。
 4. 想要「答對加分」「答錯溫和糾正、可以重試」這類練習機制，參考
    `demo-script.js` 裡 `good_response`/`rude_response`/`silent_response`
    三個節點的寫法：用 `action` 呼叫 `app.story.addVar()` 記分、
