@@ -4,14 +4,18 @@ import { wrapText } from '../../engine/text.js';
 import { coverRect } from '../../engine/math.js';
 import { VIEW, FONT, NAME_FONT } from '../constants.js';
 
-const BOX_MARGIN = 24;
-const BOX_HEIGHT = 168;
-const BOX_PAD = 22;
-const LINE_HEIGHT = 26;
-const PORTRAIT_W = 260;
-const PORTRAIT_H = 460;
+const BOX_MARGIN = 16;
+const BOX_HEIGHT = 210;
+const BOX_PAD = 18;
+const LINE_HEIGHT = 25;
+const PORTRAIT_W = 300;
+const PORTRAIT_H = 540; // matches a ~9:16 half-body/full-body crop, not tied to any source image's own pixel size
 
-const POSITION_X = { left: 0.2, center: 0.5, right: 0.8 };
+// Closer together than a landscape layout could afford - VIEW is much
+// narrower now, and two portraits at POSITION_X's spread naturally overlap a
+// little near the dialogue box, which reads as "standing next to each
+// other" rather than looking broken.
+const POSITION_X = { left: 0.3, center: 0.5, right: 0.7 };
 
 // A conversation: background, one or more animated/dressed-up portraits, and
 // a dialogue box with typewriter text and branching choices. This is the

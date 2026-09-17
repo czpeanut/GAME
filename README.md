@@ -22,6 +22,24 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 > ES Modules 無法從 `file://` 直接載入（瀏覽器 CORS 限制），所以需要透過
 > `npm start` 提供的簡易靜態伺服器來執行，它本身也沒有任何相依套件。
 
+### 在真的手機上測試
+
+`npm start` 只會在你執行它的那台機器上開一個本機伺服器（預設
+`http://localhost:8080`），手機沒辦法直接連進去，需要：
+
+1. **電腦和手機連同一個 WiFi**，手機瀏覽器開
+   `http://<電腦的區網IP>:8080`（電腦 IP 可用 `ipconfig`（Windows）或
+   `ifconfig`/`ip addr`（Mac/Linux）查，通常長得像 `192.168.x.x`）。
+2. 或是部署成公開網址（例如 GitHub Pages）——純靜態網站、零建置步驟，
+   直接把整個 repo 內容當靜態檔案託管即可，不需要 `npm start`。
+
+## 手機／畫面比例
+
+`VIEW`（`src/vn/constants.js`）是 540×960，**直向 9:16**——設計成手機直握
+時剛好塞滿螢幕寬度的比例，不需要橫向手機。`src/main.js` 會依視窗大小自動
+等比縮放 canvas；現代手機（更窄更長，例如 19.5:9）縮放後上下會留一點小
+黑邊，這是預期的，不是 bug。
+
 ## 操作方式
 
 | 動作 | 鍵盤 | 滑鼠／觸控 |
@@ -136,8 +154,8 @@ new Character('teacher', {
 ```
 
 對應的圖片放在 `assets/characters/teacher/body/default.png`，圖片尺寸沒有
-強制規格（建議寬高比接近 260:460，即約 9:16 的半身/全身構圖），繪製時會
-依 `PortraitRenderer.draw()` 的 `width`/`height`（目前為 260×460，錨點在
+強制規格（建議寬高比接近 300:540，即約 9:16 的半身/全身構圖），繪製時會
+依 `PortraitRenderer.draw()` 的 `width`/`height`（目前為 300×540，錨點在
 底部置中）縮放——要換這個尺寸就改 `src/vn/scenes/dialogue-scene.js` 裡的
 `PORTRAIT_W`/`PORTRAIT_H`。**圖還沒畫好、載入失敗、或根本沒提供，都會
 退化成一個標示角色名字的色塊**，不會白畫面、不會丟例外，所以整個系統
@@ -147,8 +165,9 @@ new Character('teacher', {
 `stage.setBackground('classroom.jpg')` 裡的字串就是完整檔名含副檔名，
 jpg/png/webp 都可以——背景本來就不需要透明底，用 jpg 通常檔案小很多）。
 任意尺寸都可以，畫面會用「置中裁切鋪滿」（CSS `background-size: cover`
-的效果）畫進 `VIEW`（960×540，`src/vn/constants.js`），不會被拉伸變形，
-但長寬比跟 16:9 差太多的圖，上下或左右會被裁掉一些。
+的效果）畫進 `VIEW`（540×960，`src/vn/constants.js`，直向 9:16——這是給
+手機直握用的介面，見下方「手機／畫面比例」），不會被拉伸變形，但長寬比
+跟 9:16 差太多的圖，上下或左右會被裁掉一些。
 
 `PortraitMotion`（`src/vn/portrait-motion.js`）只做三種任何單張圖都適用、
 不需要額外素材的動態，純計時邏輯，不碰 canvas，可離線測試：
