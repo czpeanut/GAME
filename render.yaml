@@ -1,0 +1,21 @@
+# Render reads this file from the ROOT of the repository only - it does not
+# look inside subdirectories. The app itself lives in speaking/, which is what
+# rootDir points at: the blueprint is found here, but npm install, the build
+# and the server all run inside speaking/.
+#
+# If you ever lift speaking/ out into a repo of its own, move this file to the
+# root of that repo and delete the rootDir line.
+services:
+  - type: web
+    name: speaking-puppet
+    env: node
+    plan: free
+    rootDir: speaking
+    # The repo has no default branch set, so name the one to deploy rather
+    # than leaving it to be guessed. Change this if you merge the work
+    # somewhere else.
+    branch: claude/speaking-puppet
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeploy: true

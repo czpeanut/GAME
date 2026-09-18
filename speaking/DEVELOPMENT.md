@@ -48,7 +48,7 @@ Canvas 上的剛體人偶：呼吸／微傾／頭髮彈簧 + 查到的嘴型
 
 ```
 server.js                      後端：/api/ask、/api/tts
-render.yaml                    Render 部署設定（Blueprint）；rootDir: speaking
+（render.yaml 在 repo 根目錄，不在這裡——Render 只從根目錄讀藍圖，用 rootDir 指回來）
 package.json                   npm scripts：build / start / test / test:browser
 scripts/
   build-client.js              esbuild 打包 public/src/app.js → public/app.bundle.js
@@ -233,7 +233,7 @@ Gemini TTS **不支援真正的逐段串流**：測過 `streamGenerateContent?al
 
 - [ ] 只有一把環境變數（`GEMINI_API_KEY`）要手動搬過去，不會隨 git 走
 - [ ] `public/assets/characters/` 底下的人偶素材要跟著走，少了部件圖畫面只會剩一個標了名字的方框
-- [ ] `render.yaml` 的 `rootDir: speaking` 是因為這個 app 在遊戲 repo 的子資料夾裡；單獨拉出去要刪掉那一行
+- [ ] `render.yaml` 放在 **repo 根目錄**（Render 不會去子資料夾找藍圖），用 `rootDir: speaking` 指回這個資料夾；單獨拉出去要把它搬到新 repo 的根目錄並刪掉 `rootDir` 那一行
 - [ ] 部署環境要能跑 `npm run build`（esbuild 打包 `public/src/app.js` → `public/app.bundle.js`），純靜態檔案不會自動反映 `src/` 的修改
 - [ ] 如果目標專案也用 Express，注意 `server.js` 目前把 `Cache-Control: no-cache` 設成全域 middleware（見 bug #1），合併時如果有其他靜態資源想被快取，這個全域設定需要調整成只針對 `public/` 或特定副檔名
 - [ ] `public/src/puppet/` 是遊戲本體 `src/vn/`、`src/engine/` 的複製品；兩邊都在改的話記得看 `npm run build` 的漂移警告

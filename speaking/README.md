@@ -65,9 +65,11 @@ npm run test:browser   # 端對端：真的開 Chromium、擋掉兩個 Gemini �
 
 ## 部署到 Render
 
-repo 附有 `render.yaml`：在 [Render](https://render.com) 點 **New +** → **Blueprint** → 選這個 repo → **Apply**。環境變數只需要 `GEMINI_API_KEY`。
+在 [Render](https://render.com) 點 **New +** → **Blueprint** → 選這個 repo → 分支選 `claude/speaking-puppet` → **Apply**。環境變數只需要 `GEMINI_API_KEY`。
 
-`render.yaml` 裡有一行 `rootDir: speaking`，因為這個 app 放在遊戲 repo 的子資料夾裡。如果把這個資料夾單獨拉出去變成自己的 repo，**把那一行刪掉**。
+**`render.yaml` 在 repo 根目錄，不在這個資料夾裡。** Render 只從 repo 根目錄讀這個檔，不會去子資料夾找——所以藍圖放在根目錄，用 `rootDir: speaking` 指回這裡，`npm install`、建置、啟動都在這個資料夾裡跑。
+
+如果把這個資料夾單獨拉出去變成自己的 repo，把根目錄那份 `render.yaml` 搬過來，並刪掉 `rootDir` 那一行。
 
 **注意**：免費方案閒置約 15 分鐘會休眠，下次有人造訪要等十幾秒到一分鐘的冷啟動。
 
