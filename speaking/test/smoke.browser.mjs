@@ -115,24 +115,35 @@ const EXPECTED_MISSING = /\/assets\/characters\/[^/]+\/(eyes|hair_back|accessory
 const isOurs = (url) => url.startsWith(BASE) && !EXPECTED_MISSING.test(url);
 
 const errors = [];
+// The last two sections break the API on purpose to check that the failure is
+// reported to the person. Everything they log is expected, so stop collecting
+// once they start - otherwise the test fails on the errors it asked for.
+let expectFailures = false;
 page.on('console', (m) => {
+  if (expectFailures) return;
   // A failed resource logs a console error with no URL attached to the text,
   // so use the location instead and let the response/requestfailed handlers
   // below do the actual judging.
   const url = m.location()?.url ?? '';
   if (m.type() === 'error' && (!url || isOurs(url))) errors.push(m.text());
 });
-page.on('pageerror', (e) => errors.push(String(e)));
+page.on('pageerror', (e) => { if (!expectFailures) errors.push(String(e)); });
 page.on('requestfailed', (r) => {
-  if (isOurs(r.url())) errors.push(`${r.url()} ${r.failure()?.errorText}`);
+  if (!expectFailures && isOurs(r.url())) errors.push(`${r.url()} ${r.failure()?.errorText}`);
 });
 page.on('response', (r) => {
-  if (r.status() >= 400 && isOurs(r.url())) errors.push(`${r.url()} -> ${r.status()}`);
+  if (!expectFailures && r.status() >= 400 && isOurs(r.url())) errors.push(`${r.url()} -> ${r.status()}`);
 });
 
 const ANSWER = '先把題目念一次，再說說你卡在哪一步。';
-await page.route('**/api/ask', (route) =>
-  route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ answer: ANSWER }) }));
+const json = (route, body, status = 200) =>
+  route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+
+// The server under test is started without a key, so its own health check
+// would report the missing key and put a banner in the thread. Stub it - the
+// missing-key banner gets its own check at the end.
+await page.route('**/api/health', (route) => json(route, { ok: true, gemini: true }));
+await page.route('**/api/ask', (route) => json(route, { answer: ANSWER }));
 await page.route('**/api/tts**', (route) =>
   route.fulfill({ status: 200, contentType: 'audio/wav', body: speechWav() }));
 
@@ -214,6 +225,34 @@ console.log('\nlip sync');
 
 console.log('\nconsole output');
 check('no errors logged', errors.length === 0, errors.join(' | ') || 'clean');
+
+console.log('\na failure is visible in the thread, not just in a hint line');
+{
+  expectFailures = true;
+  await page.unroute('**/api/ask');
+  await page.route('**/api/ask', (route) =>
+    json(route, { error: '尚未設定 GEMINI_API_KEY，請在環境變數加入後重新啟動伺服器。' }, 500));
+
+  await page.fill('#questionInput', '這題怎麼算？');
+  await page.click('#askBtn');
+  await page.waitForSelector('.chat-bubble-error', { timeout: 10000 });
+  const message = await page.locator('.chat-bubble-error').last().textContent();
+  check('a failed question puts the reason in the conversation', message.includes('GEMINI_API_KEY'),
+    message);
+  check('the thinking row is cleared', (await page.locator('.chat-bubble-thinking').count()) === 0);
+  check('and you can ask again', await page.locator('#askBtn').isEnabled());
+}
+
+console.log('\na server with no key says so on load');
+{
+  await page.unroute('**/api/health');
+  await page.route('**/api/health', (route) => json(route, { ok: true, gemini: false }));
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('.chat-bubble-error', { timeout: 10000 });
+  const message = await page.locator('.chat-bubble-error').first().textContent();
+  check('the missing key is reported before anyone asks anything',
+    message.includes('GEMINI_API_KEY'), message);
+}
 
 if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT, fullPage: false });
 

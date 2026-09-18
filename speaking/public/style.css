@@ -439,6 +439,13 @@ textarea.input { resize: none; }
   max-height: 120px;
 }
 
+/* Something went wrong, said where the person is actually looking. */
+.chat-bubble-error {
+  border-color: #b4482f;
+  background: #fdf1ee;
+  color: #7c2d18;
+}
+
 .hint-row {
   margin: 0 var(--space-6) var(--space-4);
   display: flex;

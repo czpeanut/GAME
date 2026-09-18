@@ -79,6 +79,27 @@ function addThinkingRow() {
   return row;
 }
 
+// Failures used to go only to the hint line under the input box: 12px grey
+// text, below the fold on a short window, and nowhere near where anyone is
+// looking. A question that gets no answer has to say so in the thread.
+function addErrorRow(text) {
+  const row = document.createElement("div");
+  row.className = "chat-row ai";
+
+  const label = document.createElement("div");
+  label.className = "chat-label";
+  label.textContent = "錯誤";
+
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble chat-bubble-error";
+  bubble.textContent = text;
+
+  row.append(label, bubble);
+  chatScroll.appendChild(row);
+  scrollToBottom();
+  return row;
+}
+
 function addHistoryEntry(question, targetRow) {
   historyEmpty.hidden = true;
   turnCount += 1;
@@ -137,6 +158,22 @@ function waitForPuppet() {
   requestAnimationFrame(waitForPuppet);
 }
 waitForPuppet();
+
+// Say up front if the server cannot answer anything, rather than letting the
+// first question disappear into a 500.
+fetch("/api/health")
+  .then((res) => res.json())
+  .then((health) => {
+    if (!health.gemini) {
+      addErrorRow(
+        "伺服器沒有設定 GEMINI_API_KEY，問答和語音都不會有反應。" +
+          "請在部署環境的環境變數加上這一把（Render：Environment 分頁），然後重新部署。"
+      );
+    }
+  })
+  .catch(() => {
+    addErrorRow("連不上伺服器。如果是剛部署，免費方案的冷啟動可能要等十幾秒，重新整理再試一次。");
+  });
 
 // ---------- Audio ----------
 // Playing a moment of silence inside the submit gesture is what keeps the
@@ -256,7 +293,8 @@ async function askQuestion(question) {
   } catch (err) {
     console.error(err);
     thinkingRow.remove();
-    hint.textContent = err.message || "發生錯誤，請重試。";
+    addErrorRow(err.message || "發生錯誤，請重試。");
+    hint.textContent = "";
   } finally {
     speakingBadge.hidden = true;
     puppet.stopSpeaking();

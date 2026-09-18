@@ -134,6 +134,12 @@ app.get("/api/tts", async (req, res) => {
 });
 
 // ---------- Gemini Q&A ----------
+// Lets the page say "this server has no key" on load, instead of looking
+// perfectly fine until someone asks a question and gets an error.
+app.get("/api/health", (req, res) => {
+  res.json({ ok: true, gemini: Boolean(GEMINI_API_KEY) });
+});
+
 app.post("/api/ask", async (req, res) => {
   if (!GEMINI_API_KEY) {
     return res.status(500).json({ error: "尚未設定 GEMINI_API_KEY，請在環境變數加入後重新啟動伺服器。" });
