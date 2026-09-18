@@ -1,0 +1,4 @@
+{
+  "//": "These are browser ES modules. The project root is CommonJS (server.js), so without this Node would try to read them as CommonJS when the tests import them. esbuild ignores this file; it exists purely so `node --test`-style scripts can load the puppet directly.",
+  "type": "module"
+}

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: speaking-puppet
+    env: node
+    plan: free
+    # This app lives in a subdirectory of the repo. If you lift the folder out
+    # into a repo of its own, delete this line.
+    rootDir: speaking
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeploy: true
