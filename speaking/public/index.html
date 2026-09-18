@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>學習問答助理</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&display=swap" />
+<!-- Without this the browser asks for /favicon.ico on every load and gets
+     a 404. There is no icon to serve, so say so rather than let it ask. -->
+<link rel="icon" href="data:," />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -36,7 +39,11 @@
       <div class="avatar-frame blueprint">
         <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
         <canvas id="avatarCanvas" class="avatar-canvas"></canvas>
+        <!-- Two elements, used alternately: an element can only buffer one
+             source, so the next clause needs somewhere of its own to arrive
+             into while this one is still playing. See public/src/speech.js. -->
         <audio id="avatarAudio" playsinline></audio>
+        <audio id="avatarAudioNext" playsinline></audio>
         <div class="connect-overlay" id="loadingOverlay">
           <div class="spinner"></div>
           <p id="loadingStatus">AI教師啟動中…</p>

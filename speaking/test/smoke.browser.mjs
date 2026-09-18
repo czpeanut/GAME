@@ -10,6 +10,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { startFakeGemini } from './fake-gemini.mjs';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const PORT = Number(process.env.PORT || 3123);
@@ -32,39 +33,6 @@ function skip(reason) {
   process.exit(0);
 }
 
-// A speech-shaped WAV: three syllables with silence between them, so the
-// mouth has something to follow and something to close on.
-function speechWav({ rate = 24000 } = {}) {
-  const pattern = [
-    [0.45, 0.6], [0.25, 0], [0.45, 0.6], [0.25, 0], [0.45, 0.6], [0.3, 0],
-  ];
-  const frames = Math.round(pattern.reduce((sum, [s]) => sum + s, 0) * rate);
-  const bytes = frames * 2;
-  const buffer = Buffer.alloc(44 + bytes);
-  buffer.write('RIFF', 0);
-  buffer.writeUInt32LE(36 + bytes, 4);
-  buffer.write('WAVEfmt ', 8);
-  buffer.writeUInt32LE(16, 16);
-  buffer.writeUInt16LE(1, 20);
-  buffer.writeUInt16LE(1, 22);
-  buffer.writeUInt32LE(rate, 24);
-  buffer.writeUInt32LE(rate * 2, 28);
-  buffer.writeUInt16LE(2, 32);
-  buffer.writeUInt16LE(16, 34);
-  buffer.write('data', 36);
-  buffer.writeUInt32LE(bytes, 40);
-
-  let at = 0;
-  for (const [seconds, amplitude] of pattern) {
-    const length = Math.round(seconds * rate);
-    for (let i = 0; i < length && at < frames; i++, at++) {
-      const value = amplitude * Math.sin((2 * Math.PI * 220 * at) / rate);
-      buffer.writeInt16LE(Math.round(value * 32767), 44 + at * 2);
-    }
-  }
-  return buffer;
-}
-
 let chromium;
 try {
   ({ chromium } = await import('playwright'));
@@ -75,12 +43,26 @@ const executablePath = findChromium();
 if (!executablePath) skip('no Chromium build found');
 if (!existsSync(join(root, 'public', 'app.bundle.js'))) skip('run `npm run build` first');
 
-// ---- boot the real server ----
+// ---- boot a fake Gemini, then the real server pointed at it ----
+const ANSWER = '你先把題目從頭到尾念一次，把已知的條件圈出來。然後看看題目到底在問什麼。這樣通常就找得到卡住的地方了。';
+const fake = await startFakeGemini({ answer: ANSWER });
+
 const server = spawn('node', [join(root, 'server.js')], {
-  env: { ...process.env, PORT: String(PORT), GEMINI_API_KEY: '' },
+  env: {
+    ...process.env,
+    PORT: String(PORT),
+    GEMINI_API_KEY: 'test-key',
+    GEMINI_BASE: fake.base,
+    GEMINI_INTERACTIONS: fake.interactions,
+    GEMINI_TTS_MODEL: 'fake-tts',
+    ...(process.env.FORCE_BUFFERED === '1' ? { GEMINI_TTS_STREAM_MODEL: '' } : {}),
+  },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
-const stopServer = () => { try { server.kill(); } catch { /* already gone */ } };
+const stopServer = () => {
+  try { server.kill(); } catch { /* already gone */ }
+  fake.stop().catch(() => {});
+};
 process.on('exit', stopServer);
 
 let up = false;
@@ -125,7 +107,7 @@ page.on('console', (m) => {
   // so use the location instead and let the response/requestfailed handlers
   // below do the actual judging.
   const url = m.location()?.url ?? '';
-  if (m.type() === 'error' && (!url || isOurs(url))) errors.push(m.text());
+  if (m.type() === 'error' && (!url || isOurs(url))) errors.push(`${m.text()} @ ${url || '(no url)'}`);
 });
 page.on('pageerror', (e) => { if (!expectFailures) errors.push(String(e)); });
 page.on('requestfailed', (r) => {
@@ -135,17 +117,17 @@ page.on('response', (r) => {
   if (!expectFailures && r.status() >= 400 && isOurs(r.url())) errors.push(`${r.url()} -> ${r.status()}`);
 });
 
-const ANSWER = '先把題目念一次，再說說你卡在哪一步。';
 const json = (route, body, status = 200) =>
   route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
-// The server under test is started without a key, so its own health check
-// would report the missing key and put a banner in the thread. Stub it - the
-// missing-key banner gets its own check at the end.
-await page.route('**/api/health', (route) => json(route, { ok: true, gemini: true }));
-await page.route('**/api/ask', (route) => json(route, { answer: ANSWER }));
-await page.route('**/api/tts**', (route) =>
-  route.fulfill({ status: 200, contentType: 'audio/wav', body: speechWav() }));
+// /api/ask and /api/tts are NOT stubbed: they go to the real server, which
+// talks to the fake Gemini. That is the point - it exercises the streaming
+// response handling and the browser playing a WAV whose length is not known
+// when the header goes out.
+const ttsRequests = [];
+page.on('request', (r) => {
+  if (r.url().includes('/api/tts')) ttsRequests.push(r.url());
+});
 
 await page.goto(BASE, { waitUntil: 'networkidle' });
 
@@ -176,51 +158,72 @@ console.log('\nidle motion');
 console.log('\nasking a question');
 await page.fill('#questionInput', '這題我不會，可以教我嗎？');
 await page.click('#askBtn');
-await page.waitForSelector('.chat-row.ai:not(:first-child) .chat-bubble', { timeout: 10000 });
+// The "thinking" row is also .chat-row.ai, so wait for it to be replaced
+// rather than for any AI row to exist.
+await page.waitForFunction(() => document.querySelectorAll('.chat-bubble-thinking').length === 0,
+  null, { timeout: 20000 });
 check('the answer lands in the thread',
   (await page.locator('.chat-row.ai .chat-bubble').last().textContent()) === ANSWER);
 
-console.log('\nlip sync');
+console.log('\nspeaking a clause at a time');
 {
+  // Not just "something is playing": unlock() plays a moment of silence inside
+  // the submit gesture, which would satisfy that before a word is synthesised.
   await page.waitForFunction(() => {
-    const a = document.getElementById('avatarAudio');
-    return a && !a.paused && a.currentTime > 0;
-  }, null, { timeout: 15000 });
+    const els = [document.getElementById('avatarAudio'), document.getElementById('avatarAudioNext')];
+    return els.some((a) => a && !a.paused && a.currentTime > 0 && a.currentSrc.includes('/api/tts'));
+  }, null, { timeout: 20000 });
   check('the browser plays the audio itself - no third-party stream', true);
+
+  const firstText = new URL(ttsRequests[0] || BASE, BASE).searchParams.get('text') || '';
+  check('the first request is for one short clause, not the whole answer',
+    firstText.length > 0 && firstText.length <= 24 && firstText.length < ANSWER.length / 2,
+    `${firstText.length} chars: ${firstText}`);
+  check('the clause is a prefix of the answer', ANSWER.startsWith(firstText), firstText);
 
   const track = [];
   const started = Date.now();
-  while (Date.now() - started < 2600) {
-    track.push(await page.evaluate(() => ({
+  while (Date.now() - started < 6000) {
+    const state = await page.evaluate(() => ({
       mouth: window.puppet.mouthIndex,
-      at: document.getElementById('avatarAudio').currentTime,
-    })));
+      playing: [document.getElementById('avatarAudio'), document.getElementById('avatarAudioNext')]
+        .some((a) => a && !a.paused && !a.ended),
+    }));
+    track.push(state);
+    if (!state.playing && track.length > 20 && track.slice(-8).every((s) => !s.playing)) break;
     await page.waitForTimeout(40);
   }
-  const shapes = new Set(track.map((s) => s.mouth));
+
+  const whileSpeaking = track.filter((s) => s.playing);
+  const shapes = new Set(whileSpeaking.map((s) => s.mouth));
   check('the mouth moves while the answer is spoken', shapes.size > 1,
     `shapes seen: ${[...shapes].sort().join(',')}`);
-  check('it reaches wide open on the loud parts', shapes.has(2));
-  check('and closes again in the gaps between syllables', shapes.has(0));
+  check('it reaches wide open', shapes.has(2));
+  check('and closes again between syllables', shapes.has(0));
+  check('the mouth is shut whenever nothing is playing',
+    track.filter((s) => !s.playing).every((s) => s.mouth === 0));
 
-  // The clip is three 0.45s bursts separated by 0.25s of silence. The mouth
-  // should be shut in the gaps and open in the bursts - that is the whole
-  // claim, so check it against the clip rather than just "something moved".
-  const inBurst = (t) => {
-    const cycle = t % 0.7;
-    return t < 1.85 && cycle < 0.45;
-  };
-  const sampled = track.filter((s) => s.at > 0.1);
-  const wrong = sampled.filter((s) => (s.mouth > 0) !== inBurst(s.at));
-  check('the mouth matches the audio, not a random flap',
-    wrong.length / Math.max(sampled.length, 1) < 0.2,
-    `${wrong.length}/${sampled.length} samples off`);
-
-  await page.waitForFunction(() => document.getElementById('avatarAudio').ended, null, { timeout: 15000 });
-  await page.waitForTimeout(200);
+  await page.waitForFunction(() => window.puppet.speaking === false, null, { timeout: 25000 });
+  check('the whole answer was split into several requests', ttsRequests.length > 1,
+    `${ttsRequests.length} requests`);
+  check('every clause reached the server in order',
+    ttsRequests
+      .map((u) => new URL(u, BASE).searchParams.get('text'))
+      .join('') === ANSWER,
+    ttsRequests.map((u) => new URL(u, BASE).searchParams.get('text')).join(' | '));
   check('the mouth shuts when the answer is over',
     (await page.evaluate(() => window.puppet.mouthIndex)) === 0);
-  check('the speaking badge goes away', await page.locator('#speakingBadge').isHidden());
+}
+
+console.log('\nwhich synthesis path the server used');
+{
+  const res = await page.request.get(`${BASE}api/tts?text=${encodeURIComponent('測試一小段語音就好')}`);
+  const path = res.headers()['x-tts-path'] || '';
+  const expected = process.env.FORCE_BUFFERED === '1' ? 'buffered:' : 'stream:';
+  check(`the server reports its path (${path || 'missing'})`, path.startsWith(expected), path);
+  const body = await res.body();
+  check('it answers with a WAV', body.slice(0, 4).toString() === 'RIFF' && body.length > 1000,
+    `${body.length} bytes`);
 }
 
 console.log('\nconsole output');

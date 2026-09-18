@@ -1,78 +1,106 @@
-// The mouth track: measuring a clip's envelope and turning it into mouth
-// shapes. Pure maths, no browser - which is the point of keeping the analysis
-// out of the playback path.
+// The mouth track: turning live loudness readings into mouth shapes. Pure
+// maths, no Web Audio - which is the point of keeping MouthTrack separate from
+// the analyser that feeds it.
 
-import { analyseEnvelope, mouthIndexAt, mouthIndexForLevel } from '../public/src/puppet/lipsync.js';
-import { check, summary, syllables } from './harness.mjs';
+import { MouthTrack, mouthIndexForLevel, HOP_SECONDS } from '../public/src/puppet/lipsync.js';
+import { check, summary } from './harness.mjs';
 
-const RATE = 16000;
+// Feed a track a pattern of [seconds, loudness] and return the shape it showed
+// at each window.
+function speak(pattern, { hop = HOP_SECONDS } = {}) {
+  const track = new MouthTrack({ hop });
+  const shapes = [];
+  for (const [seconds, loudness] of pattern) {
+    for (let t = 0; t < seconds; t += hop) shapes.push(track.push(loudness, hop));
+  }
+  return shapes;
+}
 
 console.log('\nsilence keeps the mouth shut');
 {
-  const envelope = analyseEnvelope(new Float32Array(RATE), RATE);
-  check('a silent clip produces no open mouth at all',
-    envelope.levels.every((_, i) => mouthIndexAt(envelope, i * envelope.hop) === 0));
+  const shapes = speak([[1, 0]]);
+  check('a silent stretch never opens the mouth', shapes.every((s) => s === 0));
 }
 
-console.log('\nthe mouth follows the syllables, and closes in the gaps');
+console.log('\nthe mouth follows the syllables and closes in the gaps');
 {
-  // speak, pause, speak, pause - 0.3s each.
-  const samples = syllables(RATE, [[0.3, 0.5], [0.3, 0], [0.3, 0.5], [0.3, 0]]);
-  const envelope = analyseEnvelope(samples, RATE);
+  const shapes = speak([[0.3, 0.3], [0.3, 0], [0.3, 0.3], [0.3, 0]]);
+  const quarter = Math.floor(shapes.length / 4);
+  check('open during the first syllable', shapes.slice(1, quarter).some((s) => s > 0));
+  check('shut again in the gap', shapes.slice(quarter * 2 - 2, quarter * 2).every((s) => s === 0),
+    shapes.join(''));
+  check('open again on the second syllable', shapes.slice(quarter * 2 + 1, quarter * 3).some((s) => s > 0));
+  check('and shut at the end', shapes[shapes.length - 1] === 0);
+}
 
-  check('the mouth is open during the first syllable', mouthIndexAt(envelope, 0.15) > 0);
-  check('and shut again in the gap after it', mouthIndexAt(envelope, 0.55) === 0,
-    `index ${mouthIndexAt(envelope, 0.55)}`);
-  check('open again on the second syllable', mouthIndexAt(envelope, 0.75) > 0);
-  check('and shut at the end', mouthIndexAt(envelope, 1.15) === 0);
+console.log('\nloudness maps onto all three shapes, not just open and shut');
+{
+  // A loud vowel setting the reference, then quieter speech under it.
+  const shapes = speak([[0.24, 0.5], [0.6, 0.12]]);
+  check('the loud part is wide open', shapes.slice(0, 4).includes(2), shapes.join(''));
+  check('the quiet part is half open, not wide', shapes.slice(-4).includes(1), shapes.join(''));
 }
 
 console.log('\none loud burst does not mumble the rest of the sentence');
 {
-  // A plosive four times louder than everything around it. Normalising on the
-  // peak would push every other syllable below the open-mouth threshold.
-  const samples = syllables(RATE, [
-    [0.3, 0.2], [0.12, 0.8], [0.3, 0.2], [0.3, 0.2],
-  ]);
-  const envelope = analyseEnvelope(samples, RATE);
-  const quiet = [0.15, 0.6, 0.9].map((t) => mouthIndexAt(envelope, t));
-  check('the quiet syllables still move the mouth', quiet.every((i) => i > 0),
-    `indices ${quiet.join(',')}`);
+  // A plosive four times louder than what follows. A fixed reference would
+  // leave everything after it under the open-mouth threshold for good.
+  const shapes = speak([[0.12, 0.8], [0.3, 0.2], [0.3, 0.2], [0.6, 0.2]]);
+  check('the quiet syllables still move the mouth', shapes.slice(-6).every((s) => s > 0),
+    shapes.join(''));
 }
 
 console.log('\nthe mouth does not slam shut inside a word');
 {
-  // A stop consonant: a near-silent 60ms hole in the middle of a syllable.
-  const samples = syllables(RATE, [[0.24, 0.5], [0.06, 0.001], [0.24, 0.5]]);
-  const envelope = analyseEnvelope(samples, RATE);
-  check('a brief dip mid-word does not close the mouth', mouthIndexAt(envelope, 0.27) > 0,
-    `index ${mouthIndexAt(envelope, 0.27)}`);
+  // A stop consonant: one near-silent 60ms window mid-syllable.
+  const shapes = speak([[0.24, 0.4], [0.06, 0.05], [0.24, 0.4]]);
+  const dip = Math.round(0.24 / HOP_SECONDS);
+  check('a one-window dip mid-word does not close the mouth', shapes[dip] > 0,
+    `${shapes.join('')} (window ${dip})`);
 }
 
-console.log('\nlevels map to the three mouth shapes in order');
+console.log('\nlevels map to the three shapes in order');
 {
   check('silence is closed', mouthIndexForLevel(0) === 0);
   check('a quiet level is half open', mouthIndexForLevel(0.25) === 1);
   check('a loud level is wide open', mouthIndexForLevel(1) === 2);
-  check('the mapping never skips or exceeds the three shapes',
+  check('nothing maps outside the three shapes',
     [0, 0.1, 0.2, 0.3, 0.5, 0.8, 1].every((l) => [0, 1, 2].includes(mouthIndexForLevel(l))));
 }
 
-console.log('\nout-of-range times are safe');
+console.log('\nthe shape only moves on a window boundary');
 {
-  const envelope = analyseEnvelope(syllables(RATE, [[0.3, 0.5]]), RATE);
-  check('before the clip starts, the mouth is closed', mouthIndexAt(envelope, -1) === 0);
-  check('past the end of the clip, the mouth is closed', mouthIndexAt(envelope, 99) === 0);
-  check('with no envelope at all, the mouth is closed', mouthIndexAt(null, 0.5) === 0);
+  const track = new MouthTrack();
+  // Many tiny updates inside one window must not produce many mouth changes.
+  const shapes = [];
+  for (let i = 0; i < 60; i++) shapes.push(track.push(i % 2 ? 0.5 : 0, 1 / 60));
+  const changes = shapes.filter((s, i) => i > 0 && s !== shapes[i - 1]).length;
+  check('a second of alternating input changes the mouth at most ~16 times',
+    changes <= Math.ceil(1 / HOP_SECONDS) + 1, `${changes} changes`);
 }
 
-console.log('\nthe track is dense enough to read as speech, sparse enough not to strobe');
+console.log('\nreset puts it back to a closed mouth');
 {
-  const envelope = analyseEnvelope(syllables(RATE, [[2, 0.5]]), RATE);
-  check('a 2 second clip is measured in tens of windows, not thousands',
-    envelope.levels.length > 20 && envelope.levels.length < 60, `${envelope.levels.length} windows`);
-  check('windows are long enough that the mouth cannot strobe',
-    envelope.hop >= 0.04, `${envelope.hop}s`);
+  const track = new MouthTrack();
+  for (let i = 0; i < 10; i++) track.push(0.5, HOP_SECONDS);
+  check('it was open', track.index > 0);
+  track.reset();
+  check('reset closes it', track.index === 0);
+  check('and clears the loudness reference', track.level === 0);
+}
+
+console.log('\nrobustness');
+{
+  const track = new MouthTrack();
+  check('a zero-length step does not move anything', track.push(0.5, 0) === 0);
+  check('a huge step does not throw or produce nonsense', (() => {
+    try {
+      const shape = track.push(0.5, 10);
+      return [0, 1, 2].includes(shape);
+    } catch {
+      return false;
+    }
+  })());
 }
 
 process.exit(summary() ? 0 : 1);

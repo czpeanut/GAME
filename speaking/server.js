@@ -8,7 +8,26 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 const GEMINI_TTS_MODEL = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
 const GEMINI_TTS_VOICE = process.env.GEMINI_TTS_VOICE || "Puck";
 
-const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+// Overridable so the tests can point the whole thing at a fake Gemini and
+// exercise the real request/response handling without a key.
+const GEMINI_BASE = process.env.GEMINI_BASE || "https://generativelanguage.googleapis.com/v1beta/models";
+const GEMINI_INTERACTIONS = process.env.GEMINI_INTERACTIONS ||
+  "https://generativelanguage.googleapis.com/v1beta/interactions";
+
+// Only TTS models from 3.1 on can stream their audio out; the 2.5 ones hand
+// back the whole clip at once, which is most of the wait. Set this to an empty
+// string to force the buffered path.
+const GEMINI_TTS_STREAM_MODEL = process.env.GEMINI_TTS_STREAM_MODEL === undefined
+  ? "gemini-3.1-flash-tts-preview"
+  : process.env.GEMINI_TTS_STREAM_MODEL;
+
+// Gemini's TTS output is 24kHz mono PCM16 whichever model produces it.
+const TTS_SAMPLE_RATE = 24000;
+
+// A WAV whose length is not known when the header goes out. Players treat an
+// over-large data chunk as "read until the stream ends", which is what lets
+// the browser start playing a sentence while it is still being synthesised.
+const STREAMING_DATA_LENGTH = 0xffffffff - 36;
 
 const app = express();
 app.use(express.json({ limit: "20kb" }));
@@ -81,6 +100,147 @@ function wavHeader(dataLength, sampleRate, channels = 1, bitsPerSample = 16) {
 // ---------- Text to speech ----------
 // Gemini returns headerless L16 PCM; the browser's decodeAudioData needs a
 // container, so wrap it in a WAV header before sending it on.
+// Reads Gemini's server-sent event stream and hands back each audio chunk as
+// it lands. The wire format is `event: step.delta` with a JSON `data:` line
+// whose `delta` carries base64 audio - but this stays deliberately tolerant
+// about the shape, because a preview API that changes its field names should
+// degrade into "no audio, fall back" rather than into a crash.
+async function* audioChunks(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let split;
+    while ((split = buffer.indexOf("\n\n")) !== -1) {
+      const event = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+      for (const line of event.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        let parsed;
+        try {
+          parsed = JSON.parse(payload);
+        } catch {
+          continue; // a partial or unexpected line is not worth failing over
+        }
+        const delta = parsed.delta || parsed;
+        if (delta && delta.type === "audio" && typeof delta.data === "string") {
+          yield Buffer.from(delta.data, "base64");
+        }
+      }
+    }
+  }
+}
+
+// Returns true if it answered the request. Anything that goes wrong BEFORE the
+// first byte is written returns false instead, so the caller can still fall
+// back - which matters because the streaming model is a preview and may simply
+// not be available on a given key.
+async function streamSpeech(res, text, rate) {
+  if (!GEMINI_TTS_STREAM_MODEL) return false;
+
+  const started = Date.now();
+  let upstream;
+  try {
+    upstream = await fetch(`${GEMINI_INTERACTIONS}?alt=sse`, {
+      method: "POST",
+      headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: GEMINI_TTS_STREAM_MODEL,
+        input: withPaceDirection(text, rate),
+        response_format: { type: "audio" },
+        generation_config: { speech_config: [{ voice: GEMINI_TTS_VOICE }] },
+        stream: true,
+      }),
+    });
+  } catch (err) {
+    console.warn("串流語音連線失敗，改用一次回傳的模型:", String(err));
+    return false;
+  }
+
+  if (!upstream.ok || !upstream.body) {
+    const detail = await upstream.text().catch(() => "");
+    console.warn(`串流語音不可用（${upstream.status}），改用一次回傳的模型:`, detail.slice(0, 300));
+    return false;
+  }
+
+  let firstChunk = false;
+  try {
+    for await (const pcm of audioChunks(upstream)) {
+      if (!pcm.length) continue;
+      if (!firstChunk) {
+        firstChunk = true;
+        // The number that matters: how long before there is something to
+        // play. Shows up in the deploy's logs.
+        console.log(`TTS 串流 首段 ${Date.now() - started}ms（${text.length} 字）`);
+        res.setHeader("Content-Type", "audio/wav");
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("X-TTS-Path", `stream:${GEMINI_TTS_STREAM_MODEL}`);
+        res.write(wavHeader(STREAMING_DATA_LENGTH, TTS_SAMPLE_RATE));
+      }
+      res.write(pcm);
+    }
+  } catch (err) {
+    // Mid-stream failures cannot be retried - the header is already out.
+    console.error("串流語音中斷:", String(err));
+    if (firstChunk) res.end();
+    return firstChunk;
+  }
+
+  if (!firstChunk) {
+    console.warn("串流語音沒有回傳任何音訊，改用一次回傳的模型");
+    return false;
+  }
+  res.end();
+  return true;
+}
+
+// The original path: ask for the whole clip and send it on in one piece.
+async function bufferedSpeech(res, text, rate) {
+  const started = Date.now();
+  const ttsRes = await fetch(`${GEMINI_BASE}/${GEMINI_TTS_MODEL}:generateContent`, {
+    method: "POST",
+    headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: withPaceDirection(text, rate) }] }],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: GEMINI_TTS_VOICE } } },
+      },
+    }),
+  });
+
+  const data = await ttsRes.json();
+  if (!ttsRes.ok) {
+    console.error("Gemini TTS 失敗:", ttsRes.status, JSON.stringify(data).slice(0, 500));
+    return res.status(502).json({ error: "語音合成失敗", detail: data.error && data.error.message });
+  }
+
+  const inline = data.candidates?.[0]?.content?.parts?.find((p) => p.inlineData)?.inlineData;
+  if (!inline?.data) {
+    console.error("Gemini TTS 沒有回傳音訊:", JSON.stringify(data).slice(0, 500));
+    return res.status(502).json({ error: "語音合成沒有回傳音訊" });
+  }
+
+  const pcm = Buffer.from(inline.data, "base64");
+  const sampleRate = Number(/rate=(\d+)/.exec(inline.mimeType || "")?.[1]) || TTS_SAMPLE_RATE;
+
+  res.setHeader("Content-Type", "audio/wav");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-TTS-Path", `buffered:${GEMINI_TTS_MODEL}`);
+  console.log(`TTS 一次回傳 ${Date.now() - started}ms（${text.length} 字）`);
+  res.send(Buffer.concat([wavHeader(pcm.length, sampleRate), pcm]));
+}
+
+// One sentence at a time: the page asks for each in turn and starts playing
+// the first while the rest are still being made, so the wait is one clause
+// rather than a whole answer.
 app.get("/api/tts", async (req, res) => {
   if (!GEMINI_API_KEY) {
     return res.status(500).json({ error: "尚未設定 GEMINI_API_KEY，請在環境變數加入後重新啟動伺服器。" });
@@ -97,45 +257,18 @@ app.get("/api/tts", async (req, res) => {
   const rateVal = Number.isFinite(Number(rate)) ? Number(rate) : 1;
 
   try {
-    const ttsRes = await fetch(`${GEMINI_BASE}/${GEMINI_TTS_MODEL}:generateContent`, {
-      method: "POST",
-      headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: withPaceDirection(text, rateVal) }] }],
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: GEMINI_TTS_VOICE } } },
-        },
-      }),
-    });
-
-    const data = await ttsRes.json();
-    if (!ttsRes.ok) {
-      console.error("Gemini TTS 失敗:", ttsRes.status, JSON.stringify(data).slice(0, 500));
-      return res.status(502).json({ error: "語音合成失敗", detail: data.error && data.error.message });
-    }
-
-    const inline = data.candidates?.[0]?.content?.parts?.find((p) => p.inlineData)?.inlineData;
-    if (!inline?.data) {
-      console.error("Gemini TTS 沒有回傳音訊:", JSON.stringify(data).slice(0, 500));
-      return res.status(502).json({ error: "語音合成沒有回傳音訊" });
-    }
-
-    const pcm = Buffer.from(inline.data, "base64");
-    const sampleRate = Number(/rate=(\d+)/.exec(inline.mimeType || "")?.[1]) || 24000;
-
-    res.setHeader("Content-Type", "audio/wav");
-    res.setHeader("Cache-Control", "no-store");
-    res.send(Buffer.concat([wavHeader(pcm.length, sampleRate), pcm]));
+    if (await streamSpeech(res, text, rateVal)) return;
+    await bufferedSpeech(res, text, rateVal);
   } catch (err) {
     console.error("連線語音合成服務失敗:", err);
-    res.status(502).json({ error: "連線語音合成服務失敗", detail: String(err) });
+    if (!res.headersSent) {
+      res.status(502).json({ error: "連線語音合成服務失敗", detail: String(err) });
+    } else {
+      res.end();
+    }
   }
 });
 
-// ---------- Gemini Q&A ----------
-// Lets the page say "this server has no key" on load, instead of looking
-// perfectly fine until someone asks a question and gets an error.
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, gemini: Boolean(GEMINI_API_KEY) });
 });

@@ -2,7 +2,8 @@
 
 這份文件記錄「會說話的人」這個專案從最初構想到目前狀態的完整技術決策過程，包含試過但放棄的方案、為什麼放棄、已修好的 bug 與根因、還沒解決的問題。目的是讓合併到其他專案時不會丟失這些脈絡——很多決策背後有實測數據支撐，不是憑感覺選的。
 
-最後更新：把 Simli 串流虛擬人換成自己畫的剛體人偶（分支 `claude/speaking-puppet`）。
+最後更新：把語音改成逐句合成＋串流，第一句就開口（分支 `claude/speaking-puppet`）。
+在那之前：把 Simli 串流虛擬人換成自己畫的剛體人偶。
 在那之前的狀態對應 commit `346db8a`（分支 `claude/zealous-thompson-93pmdy`）。
 
 ---
@@ -29,13 +30,18 @@ GET /api/tts?text=... ──► Gemini TTS API (gemini-2.5-flash-preview-tts)
       │                    男聲 "Puck"，回傳無檔頭 L16 PCM
       │◄───────────────── 後端補上 WAV 檔頭回傳
       ▼
-瀏覽器端：decodeAudioData 解碼（順便重取樣成 16kHz）
+瀏覽器端：把回答拆成子句（splitSentences）
       ▼
-analyseEnvelope()：每 60ms 量一格音量 → 嘴型軌道（0 閉 / 1 半開 / 2 張開）
+第一句 → GET /api/tts ──► 伺服器 → Gemini TTS
+      │                    3.1 以後：SSE 串流，收到一塊就往下送
+      │                    2.5：整段回來（退回路徑）
+      │◄───────────────── WAV（串流時檔頭寫「讀到結束為止」）
       ▼
-<audio> 直接播放原始 WAV；每一幀用 audio.currentTime 查嘴型軌道
+<audio> A 開始播；同時 <audio> B 去要第二句
       ▼
-Canvas 上的剛體人偶：呼吸／微傾／頭髮彈簧 + 查到的嘴型
+AnalyserNode 即時量音量 → 嘴型（0 閉 / 1 半開 / 2 張開）
+      ▼
+Canvas 上的剛體人偶：呼吸／微傾／頭髮彈簧 + 當下的嘴型
 ```
 
 後端（`server.js`）只做兩件事，金鑰全部留在伺服器端：
@@ -54,17 +60,21 @@ scripts/
   build-client.js              esbuild 打包 public/src/app.js → public/app.bundle.js
                                （順便檢查人偶模組有沒有跟遊戲本體的原始檔漂移）
 test/
-  lipsync.test.mjs             嘴型軌道的單元測試（純數學，不需要瀏覽器）
-  smoke.browser.mjs            端對端：起 server、開 Chromium、擋掉 Gemini、驗嘴型跟著音訊
+  lipsync.test.mjs             嘴型的單元測試（純數學，不需要瀏覽器）
+  sentences.test.mjs           斷句的單元測試
+  fake-gemini.mjs              假的 Gemini：SSE 串流 TTS ＋ 一次回傳，兩種都實作
+  smoke.browser.mjs            端對端：起真 server ＋ 假 Gemini、開 Chromium、兩條路徑各跑一次
   harness.mjs                  測試用的斷言小工具
 public/
   index.html                   頁面結構（Industry 設計系統）
   style.css                    設計系統 tokens + 版面（藍圖風格：直角、四角測繪標記）
   assets/characters/hero/      人偶的部件圖（頭／軀幹／雙手／瀏海／三張嘴型）
   src/app.js                   前端邏輯原始碼（會被打包成 app.bundle.js，不要直接改 bundle）
+  src/speech.js                逐句播放的佇列：兩個 <audio> 輪流、預先抓下一句
   src/puppet/                  人偶引擎，從遊戲本體複製過來的（見下方說明）
-    speaking-puppet.js         Canvas 上的人偶：構圖、迴圈、把嘴型軌道接到 audio.currentTime
-    lipsync.js                 音量包絡 → 嘴型軌道（純函式，所以測得動）
+    speaking-puppet.js         Canvas 上的人偶：構圖、迴圈、把嘴型接到即時音量
+    lipsync.js                 即時音量 → 嘴型（MouthTrack 是純函式，所以測得動）
+    sentences.js               把回答拆成子句（純字串處理）
     hero.js                    這個角色的 rig 定義（關節位置、各部件的動態權重）
     rig.js / spring.js / portrait-motion.js / portrait-renderer.js
     character.js / image-cache.js / loop.js
@@ -129,12 +139,13 @@ Gemini TTS **不支援真正的逐段串流**：測過 `streamGenerateContent?al
 
 沒有 API。這一層的三個重點：
 
-**嘴型是先量好、再查表，不是即時分析。** Gemini TTS 不支援串流，整段語音會一次回來，所以在播放之前就能把整段的音量包絡量完（`lipsync.js` 的 `analyseEnvelope`），存成一格 60ms 的陣列；播放時每一幀拿 `audio.currentTime` 去查。這樣做的好處是播放路徑上沒有任何 Web Audio 節點——`<audio>` 元素照舊自己播、音量滑桿照舊有效、手機的自動播放解鎖（bug #7）照舊成立——而且它是一個純函式，可以在 Node 裡測。
+**嘴型是即時量的。** 一開始是「先把整段語音的音量包絡量完，再用 `audio.currentTime` 查表」——那個做法的前提是整段語音在開口前就已經存在，而那正是我們要消滅的等待。改成串流之後音訊是邊來邊播的，所以改用 `AnalyserNode` 即時量。`MouthTrack`（`lipsync.js`）是可測的那一半：一串音量讀數進去，嘴型出來。
 
-包絡處理有三個實測調出來的細節，改動前先看一下：
+調出來的細節，改動前先看一下：
 - **60ms 一格**：中文一秒約 5-7 個音節，這個長度抓得到音節、又讓嘴巴最多一秒換 16 次。再細下去嘴巴會像在抖。
-- **用第 95 百分位數正規化，不是用最大值**：一個爆音（ㄆ、ㄊ 之類）會把整句話的相對音量壓下去，結果整段都是半開嘴在喃喃自語。
-- **只做「向下平滑」**：音量可以瞬間上升，但每格最多掉 0.45。字中間的塞音（ㄅㄉㄍ）有接近無聲的短暫空隙，不擋的話嘴巴會在字中間閉一下，看起來像結巴。
+- **參考音量用「會衰減的峰值」，不是固定值也不是全段最大值**：串流時根本沒有「全段」可以取百分位數。用會衰減的峰值，一個大聲的音節設定基準，幾秒後基準自己讓開。
+- **有靜音地板**：沒有地板的話，衰減的基準最後會把環境噪音放大成一張在說話的嘴。
+- **只做向下平滑**：音量可以瞬間上升，但每格最多掉 0.45。字中間的塞音（ㄅㄉㄍ）有接近無聲的短暫空隙，不擋的話嘴巴會在字中間閉一下，看起來像結巴。
 
 **構圖是「畫布是一扇窗」。** 人偶是 402×720 的全身立繪，`speaking-puppet.js` 的 `FRAMING` 指定要看哪一段（目前 `bottom: 0.46`，頭頂到腰）。注意這兩個數字是連動的：畫布尺寸固定，縱向看得越少、橫向也跟著看得越少。在 200×300 的框裡 `bottom` 壓到 0.46 以下，兩隻手就會被切掉——而手臂擺動是人偶「活著」的一半來源。
 
@@ -142,11 +153,29 @@ Gemini TTS **不支援真正的逐段串流**：測過 `streamGenerateContent?al
 
 素材怎麼拆、嘴型怎麼從三張完稿截出來，見遊戲本體 README 的「動態立繪：素材拆分規格」。
 
+### 4.4 語音延遲：逐句 ＋ 串流
+
+**問題**：原本一個回答要等 7-17 秒才出聲。根因不是哪家 API 慢，是**等的東西太大**——等整段回答的語音。
+
+**做法有三層，效果是疊加的：**
+
+1. **拆句子**（`sentences.js`）。只有第一句是有人在等的，後面每一句都在前一句播放時先去要。第一句有更緊的上限（24 字，約兩秒語音）——這個數字是關鍵，太長就等於沒改。
+2. **兩個 `<audio>` 輪流**（`speech.js`）。一個元素只能緩衝一個來源，所以下一句需要自己的容器可以先收。
+3. **會串流的 TTS 模型**。Gemini 的 TTS 從 3.1 起支援串流（`gemini-3.1-flash-tts-preview`），走的是**另一個端點**：`POST /v1beta/interactions?alt=sse`，body 是 `{model, input, response_format:{type:"audio"}, generation_config:{speech_config:[{voice}]}, stream:true}`，回來是 SSE，每個事件 `delta.type === "audio"`、`delta.data` 是 base64。**跟 2.5 的 `:generateContent` 完全是不同形狀**，不是換個字串就好。
+
+**串流的 WAV 檔頭**：送出檔頭的當下還不知道長度，所以 data 長度寫成 `0xFFFFFFFF - 36`，播放器會當成「讀到串流結束為止」。這是瀏覽器能邊收邊播的原因。
+
+⚠️ **3.1 是 preview 模型**，不保證每一把 key 都拿得到。所以 `streamSpeech()` 的規則是：**寫出第一個位元組之前出的任何錯都回傳 false**，讓呼叫端還能退回 2.5 的一次回傳路徑；一旦開始寫就不能回頭了。走了哪條路會寫在 `X-TTS-Path` 回應標頭和伺服器日誌裡。
+
+**怎麼確認有沒有效**：伺服器日誌會印 `TTS 串流 首段 412ms（23 字）` 或 `TTS 一次回傳 3120ms（23 字）`；瀏覽器 console 會印「第一句語音：送出後 X 秒」。這些是實際部署上唯一能證明有沒有改善的東西——開發環境沒有 key，量不到真實數字。
+
 ## 5. 環境變數完整清單
 
 | 變數 | 必要 | 說明 | 取得方式 |
 |---|---|---|---|
 | `GEMINI_API_KEY` | 是 | 問答與語音共用同一把 | https://aistudio.google.com/apikey |
+| `GEMINI_TTS_STREAM_MODEL` | 否，預設 `gemini-3.1-flash-tts-preview` | 可串流的語音模型；設成空字串強制走一次回傳 |
+| `GEMINI_BASE` / `GEMINI_INTERACTIONS` | 否 | Gemini 端點位址，測試用來指向假的 Gemini |
 | `GEMINI_MODEL` | 否，預設 `gemini-3.6-flash` | 問答模型 | 若這個 model 被下架，錯誤訊息通常會直接告訴你該換成哪個 |
 | `GEMINI_TTS_MODEL` | 否，預設 `gemini-2.5-flash-preview-tts` | 語音合成模型 | — |
 | `GEMINI_TTS_VOICE` | 否，預設 `Puck` | Gemini 內建語音角色 | Gemini API 文件列有完整清單 |
@@ -219,7 +248,8 @@ Gemini TTS **不支援真正的逐段串流**：測過 `streamGenerateContent?al
 
 - **手機連線失敗（應該已隨 Simli 一起消失，但沒有實機驗證）**：舊的回報是「手機版都會連線失敗」，合理懷疑是 Simli 的 WebRTC/WebSocket 在行動網路上被擋。現在整個連線步驟都不存在了——頁面只從自己的伺服器抓兩個一般的 HTTP 回應——所以這個問題在原理上不該再發生。但這是推論，**還沒有實機回報佐證**。
 - **手機自動播放仍是風險**：bug #7 的解法（在送出手勢裡同步播一小段無聲音訊解鎖 `<audio>`）保留下來了，而且現在更關鍵——以前聲音是從 Simli 的音軌來的，現在是自己播的 WAV，擋掉就整個沒聲音。桌面 Chromium 的端對端測試會走完整條播放路徑並驗證嘴型有動（代表音訊真的在播），但 **iOS Safari 沒有實機驗證過**。若真的被擋，前端會顯示「瀏覽器擋下了自動播放，請再按一次送出」，而不是靜悄悄地失敗。
-- **語音生成延遲 ~7-17 秒**：根因是 Gemini TTS 生成時間本身（無串流）。這一項沒有因為換掉 Simli 而改變，第 6.2 節列的「本地 TTS」「逐句 pipeline」仍然是可能的解法，都還沒實作。
+- **語音延遲：已處理，但沒有實測數字**。逐句 ＋ 串流（第 4.4 節）已經實作並測過兩條路徑，但開發環境沒有 Gemini key，**實際能壓到幾秒沒有量過**。部署上跑一次，看伺服器日誌的 `TTS 串流 首段 …ms` 和瀏覽器 console 的「第一句語音：送出後 X 秒」就知道。如果日誌顯示走的是「一次回傳」，代表那把 key 拿不到 3.1 preview 模型。
+- **手機內建 TTS（`speechSynthesis`）沒有採用**：延遲趨近於零，但**給不了中文男聲**——API 規格裡沒有性別欄位，iOS 的瀏覽器只拿得到女聲「美嘉」（Siri 的台灣男聲不開放給網頁），Android 實際發音的是使用者系統設定裡選的那一個。角色是男性，所以這條路被否決。未來若要當離線備案，剛體人偶不需要波形，用 `onboundary` 的逐字事件就能驅動嘴巴。
 - **人偶不會眨眼**：`eyes` 部件在 rig 裡已經接好（`blink: true`），但沒有 `open.png` / `closed.png` 素材，所以那個部件會被跳過。補上兩張圖就會自動開始眨眼，程式不用改。
 
 ## 9. 費用參考（2026-09 查證，會浮動）
@@ -227,6 +257,7 @@ Gemini TTS **不支援真正的逐段串流**：測過 `streamGenerateContent?al
 - **畫面**：$0。人偶跑在使用者自己的瀏覽器裡，沒有任何外部服務。（換掉的 Simli 原本是免費 50 分鐘／月，超過約 $0.009/分鐘）
 - **Gemini**：問答與 TTS 都是用量計費，確切費率請查 https://ai.google.dev/pricing （當時沒有特別記錄費率數字）
 - **Render**：免費方案，閒置約 15 分鐘會休眠，下次造訪冷啟動約十幾秒到一分鐘
+- **Gemini TTS**：逐句合成會讓請求數變多，但總字數不變，所以費用大致相同
 - **ElevenLabs**（若採用聲音克隆，尚未實作）：Starter $6/月起（約 NT$190）才能用 Instant Voice Clone，另外按字數計費（Flash 模型約 NT$1.6/1000 字元）
 
 ## 10. 合併到其他專案時的檢查清單

@@ -1,14 +1,13 @@
 import { SpeakingPuppet } from "./puppet/speaking-puppet.js";
-import { analyseEnvelope } from "./puppet/lipsync.js";
+import { SpeechQueue } from "./speech.js";
 
-// Sample rate for the envelope analysis only - the browser decodes and
-// resamples the clip into this rate just so the mouth track is cheap to
-// compute. Playback itself uses the original WAV untouched.
-const ANALYSIS_SAMPLE_RATE = 16000;
 const GREETING = "你好，我是學習問答助理。請描述你在課業上遇到的問題，我會盡力提供解說與示例。";
 
 const avatarCanvas = document.getElementById("avatarCanvas");
-const audioEl = document.getElementById("avatarAudio");
+const audioElements = [
+  document.getElementById("avatarAudio"),
+  document.getElementById("avatarAudioNext"),
+];
 const loadingOverlay = document.getElementById("loadingOverlay");
 const loadingStatus = document.getElementById("loadingStatus");
 const speakingBadge = document.getElementById("speakingBadge");
@@ -29,12 +28,24 @@ const volumeVal = document.getElementById("volumeVal");
 const hint = document.getElementById("hint");
 
 const puppet = new SpeakingPuppet(avatarCanvas);
+// askedAt lets the one number that matters - how long from pressing send to
+// hearing the first word - show up in the console on a real deployment, where
+// it can actually be measured.
+let askedAt = 0;
+const speech = new SpeechQueue(audioElements, {
+  onMouth: (meter) => puppet.speak(meter),
+  onPiece: (piece, index) => {
+    if (index === 0 && askedAt) {
+      console.info(`第一句語音：送出後 ${((performance.now() - askedAt) / 1000).toFixed(1)} 秒`);
+    }
+  },
+});
 // Exposed so the browser test (and anyone debugging a sync problem) can read
 // the mouth the page is actually showing, rather than inferring it from
 // pixels.
 window.puppet = puppet;
+window.speech = speech;
 let turnCount = 0;
-let speechUrl = null;
 
 function setStatus(label, variant) {
   statusTag.textContent = label;
@@ -176,90 +187,10 @@ fetch("/api/health")
   });
 
 // ---------- Audio ----------
-// Playing a moment of silence inside the submit gesture is what keeps the
-// element unlocked on mobile. Gemini TTS takes 7-17 seconds, long past the
-// point where iOS Safari stops treating a play() call as user-initiated, so
-// by the time the real clip arrives an untouched element would refuse to
-// play it - silently, which is exactly how it was reported. The element is
-// primed with this clip at load so the gesture has something to play.
-function silentWavUrl() {
-  const rate = 8000;
-  const frames = 400; // 50ms
-  const bytes = frames * 2;
-  const buffer = new ArrayBuffer(44 + bytes);
-  const view = new DataView(buffer);
-  const ascii = (offset, text) => {
-    for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
-  };
-  ascii(0, "RIFF");
-  view.setUint32(4, 36 + bytes, true);
-  ascii(8, "WAVEfmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, rate, true);
-  view.setUint32(28, rate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  ascii(36, "data");
-  view.setUint32(40, bytes, true);
-  return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
-}
-
-const SILENCE_URL = silentWavUrl();
-audioEl.src = SILENCE_URL;
-audioEl.volume = Number(volumeRange.value);
+speech.setVolume(Number(volumeRange.value));
 
 function stopSpeaking() {
-  audioEl.pause();
-  puppet.stopSpeaking();
-  speakingBadge.hidden = true;
-  if (speechUrl) {
-    URL.revokeObjectURL(speechUrl);
-    speechUrl = null;
-  }
-  audioEl.src = SILENCE_URL;
-}
-
-async function synthesizeAndSpeak(text) {
-  const params = new URLSearchParams({ text, rate: rateRange.value });
-  const res = await fetch(`/api/tts?${params.toString()}`);
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    console.error("TTS error", data);
-    throw new Error([data.error, data.detail].filter(Boolean).join("：") || "語音合成失敗");
-  }
-  const wav = await res.arrayBuffer();
-
-  // decodeAudioData takes ownership of the buffer it is given, so the copy
-  // that becomes the playable blob has to be made first.
-  const playable = wav.slice(0);
-  const offlineCtx = new OfflineAudioContext(1, 1, ANALYSIS_SAMPLE_RATE);
-  const audioBuffer = await offlineCtx.decodeAudioData(wav);
-  const envelope = analyseEnvelope(audioBuffer.getChannelData(0), audioBuffer.sampleRate);
-
-  if (speechUrl) URL.revokeObjectURL(speechUrl);
-  speechUrl = URL.createObjectURL(new Blob([playable], { type: "audio/wav" }));
-  audioEl.src = speechUrl;
-  puppet.speak(envelope, audioEl);
-
-  speakingBadge.hidden = false;
-  try {
-    await audioEl.play();
-  } catch (err) {
-    // Autoplay was blocked despite the priming. Say so rather than leaving a
-    // puppet miming to silence.
-    puppet.stopSpeaking();
-    speakingBadge.hidden = true;
-    throw new Error("瀏覽器擋下了自動播放，請再按一次送出。");
-  }
-
-  await new Promise((resolve) => {
-    audioEl.onended = resolve;
-    audioEl.onerror = resolve;
-  });
-  audioEl.onended = null;
-  audioEl.onerror = null;
+  speech.stop();
   puppet.stopSpeaking();
   speakingBadge.hidden = true;
 }
@@ -289,7 +220,9 @@ async function askQuestion(question) {
     addHistoryEntry(question, answerRow);
 
     setStatus("說話中", "tag-accent");
-    await synthesizeAndSpeak(data.answer);
+    speakingBadge.hidden = false;
+    await speech.speak(data.answer, { rate: Number(rateRange.value) });
+    speakingBadge.hidden = true;
   } catch (err) {
     console.error(err);
     thinkingRow.remove();
@@ -311,8 +244,9 @@ askForm.addEventListener("submit", (e) => {
     return;
   }
 
-  // Synchronously, inside the real gesture - see silentWavUrl() above.
-  audioEl.play().catch(() => {});
+  // Synchronously, inside the real gesture - see SpeechQueue.unlock().
+  speech.unlock();
+  askedAt = performance.now();
 
   questionInput.value = "";
   questionInput.style.height = "";
@@ -334,5 +268,5 @@ questionInput.addEventListener("input", () => {
 rateRange.addEventListener("input", () => (rateVal.textContent = Number(rateRange.value).toFixed(1)));
 volumeRange.addEventListener("input", () => {
   volumeVal.textContent = Number(volumeRange.value).toFixed(1);
-  audioEl.volume = Number(volumeRange.value);
+  speech.setVolume(Number(volumeRange.value));
 });

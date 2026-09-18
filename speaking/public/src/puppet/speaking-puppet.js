@@ -4,7 +4,6 @@ import { Rig } from './rig.js';
 import { PortraitMotion } from './portrait-motion.js';
 import { PortraitRenderer } from './portrait-renderer.js';
 import { createHero } from './hero.js';
-import { mouthIndexAt } from './lipsync.js';
 
 // The avatar: a cut-out puppet drawn on a canvas, breathing and drifting on
 // its own, and moving its mouth in step with whatever audio element it was
@@ -40,17 +39,16 @@ export class SpeakingPuppet {
     this.motion = new PortraitMotion();
     this.rig.settle();
 
-    // Set by speak(): the measured envelope of the clip being played, and the
-    // element whose currentTime says how far into it we are. Reading the
-    // element rather than counting frames means the mouth stays in sync
-    // through a stall, a seek or a slow first frame.
-    this.envelope = null;
-    this.audio = null;
+    // Set by speak(): whatever is currently reporting how loud the speech is.
+    // Reading it live rather than from a precomputed track is what lets the
+    // mouth move to audio that is still arriving.
+    this.meter = null;
     this.mouthIndex = 0;
 
     this.loop = new Loop({
       update: (dt) => {
-        this.motion.update(dt, Boolean(this.audio));
+        this.motion.update(dt, Boolean(this.meter));
+        this.mouthIndex = this.meter ? this.meter.update(dt) : 0;
         // The motion clock only produces channel values; the rig is what
         // turns them into per-part transforms. Without this the character is
         // a still image with a moving mouth.
@@ -73,21 +71,21 @@ export class SpeakingPuppet {
     window.removeEventListener('resize', this._onResize);
   }
 
-  // Follow this element's playback with this envelope. The puppet does not
-  // own the audio: the page still creates it, plays it and controls its
-  // volume, which is what keeps the mobile autoplay unlock working.
-  speak(envelope, audioElement) {
-    this.envelope = envelope;
-    this.audio = audioElement;
+  // Take the mouth from this meter until told otherwise. The puppet does not
+  // own the audio: the page still plays it and controls its volume, which is
+  // what keeps the mobile autoplay unlock working.
+  speak(meter) {
+    this.meter = meter ?? null;
+    this.meter?.reset();
   }
 
   stopSpeaking() {
-    this.envelope = null;
-    this.audio = null;
+    this.meter = null;
+    this.mouthIndex = 0;
   }
 
   get speaking() {
-    return Boolean(this.audio && !this.audio.paused && !this.audio.ended);
+    return Boolean(this.meter);
   }
 
   // True once every part image the character actually uses has arrived. The
@@ -144,10 +142,8 @@ export class SpeakingPuppet {
     ctx.setTransform(this.ratio, 0, 0, this.ratio, 0, 0);
     ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
 
-    // Kept on the instance rather than local, so the mouth the page is
-    // showing can be read from outside (tests, debugging) without guessing
-    // from the canvas.
-    this.mouthIndex = this.audio ? mouthIndexAt(this.envelope, this.audio.currentTime) : 0;
+    // mouthIndex is updated in the fixed-step loop rather than here, so the
+    // mouth advances at a steady rate whatever the frame rate is doing.
     const mouthIndex = this.mouthIndex;
     const box = this._layout();
     this.renderer.draw(ctx, this.character, this.rig, { blinking: this.motion.blinking, mouthIndex }, box);
