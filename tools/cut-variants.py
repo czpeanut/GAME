@@ -36,6 +36,23 @@ Examples:
     python3 tools/cut-variants.py assets/characters/hero eyes \\
         open=raw/eyes-open.png closed=raw/eyes-shut.png
 
+When the variants are NOT pixel-aligned (each one separately generated or
+repainted, so the line work and shading differ slightly all over the figure),
+the difference between them is the whole character and the plain-rectangle cut
+above is useless - the surrounding skin would flicker at every mouth frame.
+--window turns on the second mode for exactly that case: you say roughly where
+the feature is, and instead of a rectangle the tool cuts a feathered mask that
+hugs only what actually changes there. The swapped area is then a few hundred
+pixels of mouth rather than a block of face.
+
+    python3 tools/cut-variants.py assets/characters/hero mouth \
+        --window 0.46,0.143,0.557,0.178 --base raw/full.png \
+        closed=raw/closed.png half=raw/half.png open=raw/open.png
+
+--base is the image the rest of the character was cut from. The part has to
+cover THAT image's mouth too, or the base's lips show through an open mouth,
+so its difference from each variant is folded into the mask.
+
 Options:
     --pad N             grow the region by N px on every side (default 6)
     --threshold N       per-channel difference counted as a change (default 12)
@@ -43,9 +60,17 @@ Options:
     --max-area-frac F   refuse if the region covers more than F of the canvas
                         (default 0.06) - a bigger region means misaligned art
     --box x0,y0,x1,y1   skip detection, use this rectangle (fractions of the
-                        image, from the top-left). Last resort for art the
-                        detector cannot separate; the seam is only invisible
-                        if the images still agree just outside the box.
+                        image, from the top-left). Only for art that IS aligned
+                        but whose feature the detector cannot separate.
+    --window x0,y0,x1,y1  feathered-mask mode, for art that is not aligned:
+                        search only this region (fractions of the image) and
+                        cut a soft mask around what changes inside it.
+    --base <image>      the image the rest of the character comes from
+                        (--window mode)
+    --seed N            difference that counts as "this is the feature, not
+                        re-render noise" in --window mode (default 55)
+    --feather F         blur radius on the mask edge in --window mode
+                        (default 1.6 px)
     --dry-run           report what it found and write nothing
 """
 
@@ -53,21 +78,125 @@ import os
 import sys
 from collections import deque
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageFilter
+
+
+def worst_channel(a, b):
+    """Per-pixel largest difference across R, G, B and A. Alpha matters: a
+    mouth opening into a transparent gap changes alpha, not colour."""
+    channels = ImageChops.difference(a, b).split()
+    worst = channels[0]
+    for ch in channels[1:]:
+        worst = ImageChops.lighter(worst, ch)
+    return worst
+
+
+def fit_canvas(im, size, reference):
+    """An export that came out a pixel or two larger than the others. The
+    padding can be on either side, so try every offset and keep whichever one
+    lines the drawing up with the reference - guessing wrong here would shift
+    the whole figure."""
+    dw, dh = im.size[0] - size[0], im.size[1] - size[1]
+    if (dw, dh) == (0, 0):
+        return im
+    best = None
+    for oy in range(dh + 1):
+        for ox in range(dw + 1):
+            crop = im.crop((ox, oy, ox + size[0], oy + size[1]))
+            score = sum(worst_channel(crop, reference).histogram()[12:])
+            if best is None or score < best[0]:
+                best = (score, ox, oy, crop)
+    print(f'  (cropped {im.size[0]}x{im.size[1]} -> {size[0]}x{size[1]}, '
+          f'offset {best[1]},{best[2]} - the alignment that matches best)')
+    return best[3]
 
 
 def load_aligned(paths):
+    loaded = [(variant, path, Image.open(path).convert('RGBA')) for variant, path in paths]
+    # The smallest canvas wins: an export that came out larger has padding to
+    # trim, and trimming is safe where inventing rows would not be.
+    size = (min(im.size[0] for _, _, im in loaded), min(im.size[1] for _, _, im in loaded))
+    slack = max(max(im.size[0] - size[0], im.size[1] - size[1]) for _, _, im in loaded)
+    if slack > 4:
+        sizes = ', '.join(f'{path} {im.size[0]}x{im.size[1]}' for _, path, im in loaded)
+        sys.exit(f'! canvases differ by more than 4 px - too far off to be stray '
+                 f'padding. Re-export them on the same canvas.\n  {sizes}')
+
+    reference = next((im for _, _, im in loaded if im.size == size), None)
     images = {}
-    size = None
-    for variant, path in paths:
-        im = Image.open(path).convert('RGBA')
-        if size is None:
-            size = im.size
-        elif im.size != size:
-            sys.exit(f'! {path} is {im.size}, but {paths[0][1]} is {size}. '
-                     'Every variant must be the same canvas, uncropped.')
-        images[variant] = im
+    for variant, path, im in loaded:
+        images[variant] = im if im.size == size else fit_canvas(im, size, reference)
     return images, size
+
+
+def feathered_mask(images, base, window, size, seed, feather, part='feature'):
+    """The mask for art whose variants are not pixel-aligned. Inside `window`,
+    take everything that differs strongly between any two states (`base`
+    included, so its own mouth gets covered), merge those pixels into one blob,
+    keep the largest, and soften the edge. What comes out hugs the feature, so
+    swapping variants leaves the surrounding face untouched instead of
+    swapping in a block of somebody else's render."""
+    w, h = size
+    states = list(images.values()) + ([base] if base is not None else [])
+    acc = None
+    for i in range(len(states)):
+        for j in range(i + 1, len(states)):
+            d = worst_channel(states[i], states[j])
+            acc = d if acc is None else ImageChops.lighter(acc, d)
+
+    frame = Image.new('L', size, 0)
+    frame.paste(255, window)
+    acc = ImageChops.multiply(acc, frame)
+
+    # Dilate before labelling so the parts of one feature (upper lip, lower
+    # lip, the gap between them) come out as a single blob.
+    seeds = acc.point(lambda v: 255 if v >= seed else 0)
+    seed_px = seeds.tobytes()
+    merged = seeds.filter(ImageFilter.MaxFilter(5))
+    flags = bytearray(merged.tobytes())
+    best = []
+    for start in range(w * h):
+        if not flags[start]:
+            continue
+        flags[start] = 0
+        queue = deque([start])
+        comp = [start]
+        while queue:
+            idx = queue.popleft()
+            x, y = idx % w, idx // w
+            for nb, ok in ((idx - 1, x > 0), (idx + 1, x < w - 1),
+                           (idx - w, y > 0), (idx + w, y < h - 1)):
+                if ok and flags[nb]:
+                    flags[nb] = 0
+                    queue.append(nb)
+                    comp.append(nb)
+        if len(comp) > len(best):
+            best = comp
+
+    if not best:
+        sys.exit(f'! nothing inside the window differs by {seed} or more. Either the '
+                 'window is in the wrong place, or --seed is too high.')
+
+    blob = Image.new('L', size, 0)
+    px = blob.load()
+    for idx in best:
+        px[idx % w, idx // w] = 255
+
+    # Report the feature's own extent - the blob is 2 px wider all round from
+    # the merge dilation, and measuring that against the window would flag
+    # every clean result as touching the edge.
+    core = [idx for idx in best if seed_px[idx]]
+    xs = [idx % w for idx in core]
+    ys = [idx // w for idx in core]
+    print(f'  feature found: {len(core)} px, x {min(xs)}-{max(xs)} y {min(ys)}-{max(ys)}'
+          f'  (mask grown to {len(best)} px)')
+    if min(xs) <= window[0] or max(xs) >= window[2] - 1 or \
+       min(ys) <= window[1] or max(ys) >= window[3] - 1:
+        print(f'  note: the mask runs into the window edge, so the window is clipping it. '
+              f'That is\n        what you want if you drew the window tight around the {part} '
+              f'on purpose - it\n        is how the re-render noise on the surrounding skin '
+              f'gets cut away. Widen\n        --window if the {part} itself is losing an edge.')
+    return blob.filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.GaussianBlur(feather))
 
 
 def difference_map(images, threshold):
@@ -80,11 +209,7 @@ def difference_map(images, threshold):
 
     for i in range(len(names)):
         for j in range(i + 1, len(names)):
-            diff = ImageChops.difference(images[names[i]], images[names[j]])
-            channels = diff.split()
-            worst = channels[0]
-            for ch in channels[1:]:
-                worst = ImageChops.lighter(worst, ch)
+            worst = worst_channel(images[names[i]], images[names[j]])
             per_pair.append((names[i], names[j], worst))
             combined = worst if combined is None else ImageChops.lighter(combined, worst)
 
@@ -144,26 +269,37 @@ def union_box(boxes):
             max(b[2] for b in boxes), max(b[3] for b in boxes))
 
 
-def write_parts(images, out_dir, part, box, size):
-    w, h = size
-    mask = Image.new('L', size, 0)
-    mask.paste(255, box)
+def clear_hidden_colour(im, alpha):
+    """Black out the RGB wherever the part is fully transparent. Invisible -
+    the browser composites premultiplied, which is why the artist's own layer
+    exports do the same - but it is most of the file: a part image is a full
+    canvas that is nearly all transparent, and PNG still stores the colour of
+    every one of those pixels. Cutting it takes a 250 KB part down to a few
+    KB, which is the difference between a fast and a slow load on a phone.
+    """
+    solid = alpha.point(lambda v: 255 if v else 0)
+    black = Image.new('L', im.size, 0)
+    return tuple(Image.composite(ch, black, solid) for ch in im.convert('RGB').split())
+
+
+def write_parts(images, out_dir, part, mask, size):
     blank = Image.new('L', size, 0)
     dest_dir = os.path.join(out_dir, part)
     os.makedirs(dest_dir, exist_ok=True)
 
     for variant, im in images.items():
-        cut = im.copy()
-        cut.putalpha(Image.composite(im.getchannel('A'), blank, mask))
+        alpha = ImageChops.multiply(im.getchannel('A'), mask)
+        cut = Image.merge('RGBA', clear_hidden_colour(im, alpha) + (alpha,))
         dest = os.path.join(dest_dir, f'{variant}.png')
         cut.save(dest)
-        print(f'  {variant:<8} -> {dest}')
+        print(f'  {variant:<8} -> {dest}  ({os.path.getsize(dest) / 1024:.0f} KB)')
 
 
 def main():
     args = sys.argv[1:]
     opts = {'pad': 6, 'threshold': 12, 'min_area': 24, 'max_area_frac': 0.06,
-            'box': None, 'dry_run': False}
+            'box': None, 'window': None, 'base': None, 'seed': 55, 'feather': 1.6,
+            'dry_run': False}
     positional = []
 
     i = 0
@@ -171,7 +307,8 @@ def main():
         a = args[i]
         if a == '--dry-run':
             opts['dry_run'] = True
-        elif a in ('--pad', '--threshold', '--min-area', '--max-area-frac', '--box'):
+        elif a in ('--pad', '--threshold', '--min-area', '--max-area-frac', '--box',
+                   '--window', '--base', '--seed', '--feather'):
             if i + 1 >= len(args):
                 sys.exit(f'! {a} needs a value')
             value = args[i + 1]
@@ -184,8 +321,14 @@ def main():
                 opts['min_area'] = int(value)
             elif a == '--max-area-frac':
                 opts['max_area_frac'] = float(value)
+            elif a == '--base':
+                opts['base'] = value
+            elif a == '--seed':
+                opts['seed'] = int(value)
+            elif a == '--feather':
+                opts['feather'] = float(value)
             else:
-                opts['box'] = tuple(float(v) for v in value.split(','))
+                opts[a[2:]] = tuple(float(v) for v in value.split(','))
         else:
             positional.append(a)
         i += 1
@@ -205,6 +348,25 @@ def main():
     images, size = load_aligned(paths)
     w, h = size
     print(f'{len(images)} variants of "{part}", {w}x{h}')
+
+    if opts['window']:
+        # Art whose variants are not pixel-aligned: a soft mask around what
+        # changes inside the window, so nothing but the feature is swapped.
+        x0, y0, x1, y1 = opts['window']
+        window = (round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h))
+        print(f'  searching inside x {window[0]}-{window[2]} y {window[1]}-{window[3]}')
+        base = None
+        if opts['base']:
+            base = Image.open(opts['base']).convert('RGBA')
+            if base.size != size:
+                base = fit_canvas(base, size, next(iter(images.values())))
+            print(f'  covering the base image\'s own {part} as well: {opts["base"]}')
+        mask = feathered_mask(images, base, window, size, opts['seed'], opts['feather'], part)
+        if opts['dry_run']:
+            print('  --dry-run: nothing written')
+            return
+        write_parts(images, out_dir, part, mask, size)
+        return
 
     if opts['box']:
         x0, y0, x1, y1 = opts['box']
@@ -249,7 +411,12 @@ def main():
     if opts['dry_run']:
         print('  --dry-run: nothing written')
         return
-    write_parts(images, out_dir, part, box, size)
+
+    # A hard-edged rectangle, and that is not a compromise: outside it every
+    # variant is pixel-identical, so both sides of the edge already match.
+    mask = Image.new('L', size, 0)
+    mask.paste(255, box)
+    write_parts(images, out_dir, part, mask, size)
 
 
 if __name__ == '__main__':

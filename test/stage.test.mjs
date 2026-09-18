@@ -105,15 +105,20 @@ console.log('\nrig: created per character on entrance and driven by update()');
   check('each character gets its own rig instance, not a shared one',
     s.rigFor('teacher') !== s.rigFor('mei'));
 
-  // Run long enough for the slow idle channels to move off their start.
-  for (let i = 0; i < 120; i++) s.update(1 / 60);
-  const torso = s.rigFor('teacher').byName.get('torso');
-  check('update() drives the rig, not just the motion clock', torso.transform.scaleY !== 1);
-
-  const teacherTorso = s.rigFor('teacher').byName.get('torso').transform.scaleY;
-  const meiTorso = s.rigFor('mei').byName.get('torso').transform.scaleY;
-  check('two characters are not breathing in perfect unison', teacherTorso !== meiTorso,
-    `${teacherTorso} vs ${meiTorso}`);
+  // Sample a whole breath rather than one arbitrary frame. The breath pauses
+  // at the bottom, where scaleY is legitimately exactly 1, and characters
+  // start on a random phase - so checking a single frame fails perhaps one
+  // run in seven, for no reason at all.
+  const samples = { teacher: [], mei: [] };
+  for (let i = 0; i < 360; i++) {
+    s.update(1 / 60);
+    samples.teacher.push(s.rigFor('teacher').byName.get('torso').transform.scaleY);
+    samples.mei.push(s.rigFor('mei').byName.get('torso').transform.scaleY);
+  }
+  check('update() drives the rig, not just the motion clock',
+    samples.teacher.some((v) => v !== 1));
+  check('two characters are not breathing in perfect unison',
+    samples.teacher.some((v, i) => v !== samples.mei[i]));
 }
 
 process.exit(summary() ? 0 : 1);

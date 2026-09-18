@@ -46,9 +46,10 @@ function buildRig({ neck, waist, shoulderY, shoulderL, shoulderR, crown }) {
     { name: 'head', parent: 'torso', pivot: [0.5, neck], tilt: -0.3, sway: 0.35 },
 
     // Driven by the animation, not by `layers`: eyes swap open/closed on the
-    // blink timer, mouth cycles closed/half/open while this character
-    // speaks. No art for these yet, so they are simply skipped - blinking
-    // and lip movement stay off until those parts are drawn.
+    // blink timer, mouth cycles closed/half/open while this character speaks.
+    // Both share the head's pivot, so they turn and scale exactly with the
+    // face instead of sliding across it. No eye art yet, so that part is
+    // simply skipped and blinking stays off until it is drawn.
     { name: 'eyes', parent: 'head', blink: true, pivot: [0.5, neck] },
     { name: 'mouth', parent: 'head', talk: true, pivot: [0.5, neck] },
 
@@ -86,8 +87,9 @@ const HERO_RIG = buildRig({
 // the next one.
 //
 // `layers` names the variant showing in each part. Parts named here with no
-// art file yet (eyes, mouth, hair_back, accessory) are simply skipped, so
-// the rig can stay complete while the art arrives piece by piece.
+// art file yet (eyes, hair_back, accessory) are simply skipped, so the rig
+// can stay complete while the art arrives piece by piece. `mouth` is absent
+// from `layers` on purpose - its variant comes from the talk timer.
 export function createDemoCharacters() {
   return {
     hero: new Character('hero', {

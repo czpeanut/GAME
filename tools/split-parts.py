@@ -47,14 +47,22 @@ def split(src_path, out_dir, bands):
         mask = Image.new('L', (w, h), 0)
         mask.paste(255, (0, top_row, w, bottom_row))
 
-        part = im.copy()
-        part.putalpha(Image.composite(alpha, blank, mask))
+        band_alpha = Image.composite(alpha, blank, mask)
+        # Black out the colour outside the band. Invisible (the browser
+        # composites premultiplied, and the artist's own layer exports do the
+        # same), but it is most of the file: each part is a full canvas that
+        # is nearly all transparent, and PNG stores the colour of every one of
+        # those pixels regardless. ~250 KB a part down to a few KB.
+        solid = band_alpha.point(lambda v: 255 if v else 0)
+        channels = tuple(Image.composite(ch, blank, solid) for ch in im.convert('RGB').split())
+        part = Image.merge('RGBA', channels + (band_alpha,))
 
         dest_dir = os.path.join(out_dir, name)
         os.makedirs(dest_dir, exist_ok=True)
         dest = os.path.join(dest_dir, 'default.png')
         part.save(dest)
-        print(f'  {name:<10} rows {top_row:>4}-{bottom_row:<4} -> {dest}')
+        print(f'  {name:<10} rows {top_row:>4}-{bottom_row:<4} -> {dest}'
+              f'  ({os.path.getsize(dest) / 1024:.0f} KB)')
 
 
 def main():
