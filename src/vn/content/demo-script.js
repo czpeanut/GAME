@@ -19,10 +19,10 @@ export const DEMO_SCRIPT = {
   start: 'intro',
   nodes: {
     intro: {
-      speaker: 'hero',
+      speaker: 'senpai',
       action: (stage) => {
         stage.setBackground('classroom.jpg');
-        stage.show('hero', 'center');
+        stage.show('senpai', 'center');
       },
       lines: [
         '欸，剛剛那題你是不是沒聽懂？',
@@ -32,7 +32,7 @@ export const DEMO_SCRIPT = {
       next: 'ask_practice',
     },
     ask_practice: {
-      speaker: 'hero',
+      speaker: 'senpai',
       lines: ['假設現在下課，你走到講台前面。你開口第一句話是什麼？'],
       choices: [
         {
@@ -45,7 +45,7 @@ export const DEMO_SCRIPT = {
       ],
     },
     good_response: {
-      speaker: 'hero',
+      speaker: 'senpai',
       action: (stage, app) => {
         app.story.addVar('score', 1);
         app.audio.correct();
@@ -58,7 +58,7 @@ export const DEMO_SCRIPT = {
       next: 'recap',
     },
     rude_response: {
-      speaker: 'hero',
+      speaker: 'senpai',
       action: (stage, app) => {
         app.story.addVar('attempts', 1);
         app.audio.incorrect();
@@ -74,7 +74,7 @@ export const DEMO_SCRIPT = {
       ],
     },
     silent_response: {
-      speaker: 'hero',
+      speaker: 'senpai',
       action: (stage, app) => {
         app.story.addVar('attempts', 1);
       },
@@ -89,7 +89,7 @@ export const DEMO_SCRIPT = {
       ],
     },
     recap: {
-      speaker: 'hero',
+      speaker: 'senpai',
       lines: [
         '記住就三件事：講出哪一題、哪一步、你已經懂到哪裡。',
         '提問不用完美，敢開口就贏一半了。',

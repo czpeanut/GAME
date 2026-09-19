@@ -62,15 +62,15 @@ function buildRig({ neck, waist, shoulderY, shoulderL, shoulderR, crown }) {
   ];
 }
 
-// Measured off this character's own artwork. The joints are at neck 0.21
-// and waist 0.43, but the band cuts deliberately OVERLAP across them:
+// Measured off the 學長 artwork. The joints are at neck 0.21 and waist 0.43,
+// but the band cuts deliberately OVERLAP across them:
 //   tools/split-parts.py <art>.png assets/characters/hero \
 //       head:0:0.25 torso:0.19:0.47 lower:0.43:1
 //
 // The overlap is what lets the seams survive motion. The bands come from a
 // flat illustration, so there is nothing painted behind them - butt-jointed
-// edges expose the background as a crisp line the moment two parts move
-// even a pixel apart. Each band reaching ~20px past its joint, drawn in
+// edges expose the background as a crisp line the moment two parts move even
+// a pixel apart. Each band reaching ~20px past its joint, drawn in
 // back-to-front order, means small movements happen inside the overlap and
 // never uncover anything.
 const HERO_RIG = buildRig({
@@ -82,29 +82,114 @@ const HERO_RIG = buildRig({
   waist: 0.43,
 });
 
+// 學姊: a rig hand-written rather than built by buildRig(), because this
+// character did not come from horizontal band cuts. The artist supplied ten
+// real layers, each complete in itself, so the parts do not have to be a
+// stack of bands and the rig can follow the anatomy instead.
+//
+// What that buys, in order of how much it matters:
+//   - the long hair is its own layer, so it can trail the head properly
+//   - the skirt is its own layer, so it can sway from the waist; on a
+//     character in a dress that is most of the life
+//   - the raised arm is its own layer, and the body behind it is complete
+//   - the waist ties are their own layer, so they can whip
+//   - the irises are separate from the face, so the eyes could look around
+//
+// What it does not buy, because the art is not there:
+//   - no blinking: there is no closed-eye drawing, and hiding the irises on
+//     their own would read as her eyes rolling back, not as a blink
+//   - no mouth movement: the mouth is painted into the face layer, so there
+//     is no `mouth` part for the talk timer to drive
+// Both are one small layer away - see the README.
+//
+// Joints measured off the assembled figure (fractions of the part canvas,
+// x from the left, y from the TOP). She stands slightly left of centre in
+// her own art because the skirt flares to the right.
+const SENPAI_RIG = [
+  // Long hair, behind everything, springing off the head. The loosest thing
+  // on the character and the single biggest reason she reads as alive.
+  { name: 'hair_back', parent: 'head', pivot: [0.42, 0.035], spring: { stiffness: 60, damping: 9, amount: 1.35 } },
+
+  // Legs. The one part that genuinely does not move - it is what makes
+  // everything above it read as motion rather than the whole image drifting.
+  { name: 'lower', pivot: [0.44, 1] },
+
+  // Waist to shoulders, carrying the breath. Her left arm is painted into
+  // this layer, so it moves with the body rather than on its own.
+  { name: 'torso', pivot: [0.44, 0.36], breathe: 1, tilt: 1 },
+
+  // The skirt hangs off the waist. It is the biggest piece of loose cloth on
+  // her, so it gets the softest, slowest spring of anything here - a dress
+  // that moves a beat behind the body is most of what sells this character.
+  { name: 'skirt', parent: 'torso', pivot: [0.44, 0.36], sway: 0.9, spring: { stiffness: 30, damping: 7, amount: 0.9 } },
+
+  // The bodice is cloth too, but fitted, so it just rides the torso.
+  { name: 'bodice', parent: 'torso', pivot: [0.44, 0.36] },
+
+  // The raised arm needs a drift of its own, not just a spring: the torso
+  // barely rotates, so lag alone comes out at a fraction of a degree and the
+  // arm reads as welded on.
+  { name: 'arm_r', parent: 'torso', pivot: [0.56, 0.245], sway: -1.1, spring: { stiffness: 42, damping: 9, amount: 0.6 } },
+
+  // The head rides the torso, already lifted by the chest expanding under it.
+  { name: 'head', parent: 'torso', pivot: [0.43, 0.205], tilt: -0.3, sway: 0.35 },
+
+  // Irises, over the face's own eye whites. Deliberately NOT marked `blink`:
+  // that would make the renderer ask for closed.png, which does not exist,
+  // and the part would vanish for the length of every blink.
+  { name: 'eyes', parent: 'head', pivot: [0.43, 0.205] },
+
+  // Bangs. Stiffer and lighter than the hair behind, so the two never swing
+  // as one slab.
+  { name: 'hair_front', parent: 'head', pivot: [0.42, 0.035], spring: { stiffness: 105, damping: 9, amount: 0.8 } },
+
+  // The waist ties: tiny, loose, and the fastest thing on her.
+  { name: 'bows', parent: 'torso', pivot: [0.44, 0.36], spring: { stiffness: 130, damping: 6, amount: 1.2 } },
+];
+
 // A factory (not a shared singleton) because App.startScript() calls this
 // fresh on every playthrough, so a previous run's changes never leak into
 // the next one.
 //
-// `layers` names the variant showing in each part. Parts named here with no
-// art file yet (eyes, hair_back, accessory) are simply skipped, so the rig
-// can stay complete while the art arrives piece by piece. `mouth` is absent
-// from `layers` on purpose - its variant comes from the talk timer.
+// `layers` names the variant showing in each part. A part with no art file is
+// simply skipped, so a rig can stay complete while the art arrives piece by
+// piece - which is why HERO_RIG can keep declaring parts nobody has drawn yet.
 export function createDemoCharacters() {
   return {
-    hero: new Character('hero', {
-      name: '學長',
-      rig: HERO_RIG,
+    senpai: new Character('senpai', {
+      name: '學姊',
+      rig: SENPAI_RIG,
       layers: {
         hair_back: 'default',
         lower: 'default',
         torso: 'default',
-        arm_l: 'default',
+        skirt: 'default',
+        bodice: 'default',
         arm_r: 'default',
         head: 'default',
+        eyes: 'default',
         hair_front: 'default',
-        accessory: 'default',
+        bows: 'default',
       },
     }),
   };
+}
+
+// The previous character, kept so the band-cut rig and its art stay usable.
+// Nothing in the demo script refers to it.
+export function createHero() {
+  return new Character('hero', {
+    name: '學長',
+    rig: HERO_RIG,
+    layers: {
+      hair_back: 'default',
+      lower: 'default',
+      torso: 'default',
+      arm_l: 'default',
+      arm_r: 'default',
+      head: 'default',
+      hair_front: 'default',
+      accessory: 'default',
+    },
+  });
 }
