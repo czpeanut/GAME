@@ -43,7 +43,7 @@ const loop = new Loop({
 
 const app = new App(ctx, input, loop, {
   title: '想問就問',
-  subtitle: '對話練習範例：怎麼開口問問題',
+  subtitle: '轉學第一天，學姊來打招呼',
   script: DEMO_SCRIPT,
   charactersFactory: createDemoCharacters,
 });

@@ -139,14 +139,13 @@ const SENPAI_RIG = [
   // something that reads as her shifting her weight.
   { name: 'head', parent: 'torso', pivot: [0.43, 0.205], tilt: -0.9, sway: 1.2 },
 
-  // The whole eye, blinking open -> half -> closed -> half -> open.
+  // Blinking: open -> half -> closed -> half -> open.
   //
-  // `closed.png` is NOT purely the artist's work and should be replaced when
-  // it can be. The artist's shut.png is a lash line only, drawn on the
-  // assumption that nothing is underneath - but the face layer has her eye
-  // whites painted on, so that lash line alone left two white eyes showing
-  // through every blink. closed.png is shut.png over a patch that fills just
-  // the sclera with the eyelid's own skin tone. See the README.
+  // This only works because the face layer has NO eyes drawn on it. The first
+  // face had the eye whites and lashes painted in, so a closed eye left white
+  // showing and the painted lashes sat still while the eye drawings changed -
+  // which is what looked wrong, not the blink itself. All three eye drawings
+  // here are the artist's.
   { name: 'eyes', parent: 'head', blink: true, pivot: [0.43, 0.205] },
 
   // Lip sync. Driven by the talk timer, not by `layers`: closed / half / open.

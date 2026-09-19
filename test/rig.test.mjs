@@ -171,14 +171,52 @@ console.log('\na parent\'s breathing scale moves children without stretching the
   check('the head records the torso\'s scale as inherited',
     Math.abs(head.parentScaleY - torso.transform.scaleY) < 1e-12);
   check('the head does not scale on its own', head.transform.scaleY === 1);
-  check('inherited scale accumulates down the chain',
-    Math.abs(hair.parentScaleY - torso.transform.scaleY) < 1e-12);
 
   // What the renderer will actually apply for each part.
   const applied = (p) => p.transform.scaleY / p.parentScaleY;
   check('the torso draws stretched', applied(torso) > 1);
   check('the head draws at its natural height despite riding a stretching torso',
     Math.abs(applied(head) - 1 / torso.transform.scaleY) < 1e-12);
+
+  // The head has already cancelled the torso's stretch, so the hair hanging
+  // off it must inherit 1 and cancel nothing. Accumulating the head's NOMINAL
+  // scale instead made the hair cancel the same breath a second time, around
+  // its own pivot - and since the crown sits much further from the waist than
+  // the neck does, that moved the hair about twice as far as the head it is
+  // attached to. On screen that is a wig floating off a skull.
+  check('a part below one that already cancelled the stretch inherits nothing',
+    Math.abs(hair.parentScaleY - 1) < 1e-12, `${hair.parentScaleY}`);
+  check('so the hair applies no scale of its own', Math.abs(applied(hair) - 1) < 1e-12);
+}
+
+console.log('\na part hanging off the head moves exactly as far as the head');
+{
+  // The actual symptom, measured the way the renderer positions things:
+  // replay the chain and see where each pivot lands.
+  const rig = new Rig([
+    { name: 'torso', pivot: [0.5, 0.36], breathe: 1 },
+    { name: 'head', parent: 'torso', pivot: [0.5, 0.205] },
+    { name: 'hair', parent: 'head', pivot: [0.5, 0.035] },
+    { name: 'eyes', parent: 'head', pivot: [0.5, 0.205] },
+  ]);
+  rig.update(1 / 60, motion({ breathe: 1 }));
+
+  const landsAt = (name) => {
+    const part = rig.byName.get(name);
+    let y = part.pivot[1];
+    for (const node of rig.chainTo(name)) {
+      const scale = node.transform.scaleY / (node.parentScaleY || 1);
+      y = node.pivot[1] + (y - node.pivot[1]) * scale;
+    }
+    return y - part.pivot[1];
+  };
+
+  const head = landsAt('head');
+  check('the head is lifted by the chest under it', head < 0, `${head}`);
+  check('hair at the crown moves exactly as far as the head',
+    Math.abs(landsAt('hair') - head) < 1e-12, `hair ${landsAt('hair')} vs head ${head}`);
+  check('and so do the eyes', Math.abs(landsAt('eyes') - head) < 1e-12);
+  check('the torso\'s own joint does not move', Math.abs(landsAt('torso')) < 1e-12);
 }
 
 console.log('\nchainTo: root-first, so the renderer can replay transforms in order');

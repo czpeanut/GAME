@@ -96,7 +96,7 @@ export class PortraitRenderer {
 
       ctx.save();
       const chain = rig.chainTo(part.name);
-      chain.forEach((node, i) => this._applyPose(ctx, node, width, height, i === chain.length - 1));
+      for (const node of chain) this._applyPose(ctx, node, width, height);
       if (bounds) {
         ctx.drawImage(
           entry.image, bounds.sx, bounds.sy, bounds.sw, bounds.sh,
@@ -118,18 +118,18 @@ export class PortraitRenderer {
   // fractions of the box (x from the left, y from the top); the drawing
   // origin is the feet, so y has to be re-based onto that.
   //
-  // `isSelf` marks the part actually being drawn, as opposed to an ancestor
-  // being replayed to position it. Ancestors apply their scale in full, so
-  // a breathing chest still lifts the head and arms riding on it - but the
-  // part itself divides that inherited scale back out, so it is *moved* by
-  // the breath without being *stretched* by it. Without this the whole
-  // upper body, face included, elongates every time the chest expands,
-  // which reads as rubber rather than breathing.
-  _applyPose(ctx, part, width, height, isSelf) {
+  // Every node in the chain is replayed exactly as it is drawn in its own
+  // right - scale divided by what it inherited. A breathing chest therefore
+  // still lifts the head riding on it, but the head is not stretched, and
+  // anything hanging off the head inherits 1 and simply goes where the head
+  // goes. Replaying ancestors at their full nominal scale instead would make
+  // each part re-cancel the same breath around its own pivot, which moves
+  // parts by different amounts depending on where their joint sits.
+  _applyPose(ctx, part, width, height) {
     const t = part.transform;
     const pivotX = (part.pivot[0] - 0.5) * width;
     const pivotY = (part.pivot[1] - 1) * height;
-    const scaleY = isSelf ? t.scaleY / (part.parentScaleY || 1) : t.scaleY;
+    const scaleY = t.scaleY / (part.parentScaleY || 1);
 
     ctx.translate(pivotX, pivotY);
     ctx.rotate(t.angle);
