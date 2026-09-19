@@ -30,7 +30,12 @@ portrait box wants.
 Requires Pillow: pip install pillow
 
 Usage:
-    python3 tools/key-layers.py <out_dir> <part>=<file> ... [options]
+    python3 tools/key-layers.py <out_dir> <part>[/<variant>]=<file> ... [options]
+
+A part with no variant is written as `default.png`. Name the variant when a
+part has several - the animation picks between them:
+    eyes/open= eyes/closed=            blink
+    mouth/closed= mouth/half= mouth/open=   lip sync
 
 Example:
     python3 tools/key-layers.py assets/characters/senpai \\
@@ -208,11 +213,14 @@ def main():
         if "=" not in spec:
             sys.exit(f'! expected <part>=<file>, got "{spec}"')
         part, path = spec.split("=", 1)
-        layers.append((part, path))
+        variant = "default"
+        if "/" in part:
+            part, variant = part.split("/", 1)
+        layers.append((part, variant, path))
 
     size = None
     keyed = []
-    for part, path in layers:
+    for part, variant, path in layers:
         im = Image.open(path).convert("RGB")
         if size is None:
             size = im.size
@@ -224,9 +232,9 @@ def main():
         box = alpha.getbbox()
         if box is None:
             sys.exit(f"! {path} is blank once the background is keyed out")
-        keyed.append((part, path, im, alpha, box))
+        keyed.append((part, variant, im, alpha, box))
         note = f"  (+{pockets} px of trapped background cleared)" if pockets else ""
-        print(f"  {part:<12} {os.path.basename(path):<22} "
+        print(f"  {part}/{variant:<16} {os.path.basename(path):<22} "
               f"{sum(alpha.histogram()[200:]):>7} opaque px{note}")
 
     crop = opts["crop"] or common_crop([k[4] for k in keyed], size, opts["aspect"],
@@ -234,20 +242,21 @@ def main():
     cw, ch = crop[2] - crop[0], crop[3] - crop[1]
     print(f"\n  crop {crop}  -> {cw}x{ch}  (aspect {cw / ch:.4f})")
 
-    for part, _, im, alpha, box in keyed:
+    for part, variant, im, alpha, box in keyed:
+        box = alpha.getbbox()
         inside = (max(box[0], crop[0]), max(box[1], crop[1]),
                   min(box[2], crop[2]), min(box[3], crop[3]))
         if inside[0] >= inside[2] or inside[1] >= inside[3]:
-            print(f"  ! {part} falls entirely outside the crop")
+            print(f"  ! {part}/{variant} falls entirely outside the crop")
         elif box != inside:
-            print(f"  ! {part} is clipped by the crop ({box} -> {inside})")
+            print(f"  ! {part}/{variant} is clipped by the crop ({box} -> {inside})")
 
     if opts["dry_run"]:
         print("  --dry-run: nothing written")
         return
 
     print()
-    for part, _, im, alpha, _ in keyed:
+    for part, variant, im, alpha, _ in keyed:
         cropped_alpha = alpha.crop(crop)
         rgb = im.convert("RGB").crop(crop)
         # Black out the colour where nothing is drawn: invisible, but it is
@@ -260,9 +269,9 @@ def main():
 
         dest_dir = os.path.join(out_dir, part)
         os.makedirs(dest_dir, exist_ok=True)
-        dest = os.path.join(dest_dir, "default.png")
+        dest = os.path.join(dest_dir, f"{variant}.png")
         out.save(dest)
-        print(f"  {part:<12} -> {dest}  ({os.path.getsize(dest) / 1024:.0f} KB)")
+        print(f"  {part}/{variant:<16} -> {dest}  ({os.path.getsize(dest) / 1024:.0f} KB)")
 
 
 if __name__ == "__main__":

@@ -14,6 +14,52 @@
 const DEFAULT_ROOT = 'assets/characters';
 const MOUTH_VARIANTS = ['closed', 'half', 'open'];
 
+// A part image is a full canvas that is mostly transparent - that convention
+// is what keeps the parts aligned with each other without any per-part
+// bookkeeping. Drawing it as a full-size rectangle every frame is the
+// expensive half of that bargain: a mouth 32px across was costing exactly as
+// much to draw as the skirt.
+//
+// So each image is measured once, when it loads, and afterwards only the part
+// of it that actually has pixels is drawn. Measured on this project's
+// character that is 11 full-canvas rectangles a frame down to about one
+// canvas' worth in total.
+function opaqueBounds(image) {
+  const { naturalWidth: w, naturalHeight: h } = image;
+  if (!w || !h) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(image, 0, 0);
+
+  let data;
+  try {
+    data = ctx.getImageData(0, 0, w, h).data;
+  } catch {
+    return null; // tainted canvas (file://) - fall back to drawing it whole
+  }
+
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w * 4;
+    for (let x = 0; x < w; x++) {
+      if (data[row + x * 4 + 3] > 8) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+  }
+  if (x1 < 0) return { empty: true };
+  return {
+    empty: false,
+    sx: x0, sy: y0, sw: x1 - x0 + 1, sh: y1 - y0 + 1,
+    fx: x0 / w, fy: y0 / h, fw: (x1 - x0 + 1) / w, fh: (y1 - y0 + 1) / h,
+  };
+}
+
 export class PortraitRenderer {
   constructor(images, root = DEFAULT_ROOT) {
     this.images = images; // shared ImageCache
@@ -44,10 +90,22 @@ export class PortraitRenderer {
       const entry = this.images.get(`${this.root}/${character.id}/${part.name}/${variant}.png`);
       if (!entry.ready) continue;
 
+      if (entry.bounds === undefined) entry.bounds = opaqueBounds(entry.image);
+      const bounds = entry.bounds;
+      if (bounds?.empty) continue;
+
       ctx.save();
       const chain = rig.chainTo(part.name);
       chain.forEach((node, i) => this._applyPose(ctx, node, width, height, i === chain.length - 1));
-      ctx.drawImage(entry.image, -width / 2, -height, width, height);
+      if (bounds) {
+        ctx.drawImage(
+          entry.image, bounds.sx, bounds.sy, bounds.sw, bounds.sh,
+          -width / 2 + bounds.fx * width, -height + bounds.fy * height,
+          bounds.fw * width, bounds.fh * height,
+        );
+      } else {
+        ctx.drawImage(entry.image, -width / 2, -height, width, height);
+      }
       ctx.restore();
       drewAny = true;
     }
@@ -80,7 +138,7 @@ export class PortraitRenderer {
   }
 
   _variantFor(character, part, motion) {
-    if (part.blink) return motion?.blinking ? 'closed' : 'open';
+    if (part.blink) return motion?.eyeVariant ?? (motion?.blinking ? 'closed' : 'open');
     if (part.talk) return MOUTH_VARIANTS[motion?.mouthIndex ?? 0] ?? 'closed';
     return character.getLayer(part.name);
   }

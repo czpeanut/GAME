@@ -133,4 +133,48 @@ console.log('\nmouth: cycles only while speaking, and closes when done');
   check('the mouth closes the moment speaking stops', m.mouthIndex === 0);
 }
 
+console.log('\na blink passes through a half-lidded frame at each end');
+{
+  const motion = new PortraitMotion({ blinkEvery: [0.2, 0.2], blinkDuration: 0.12 });
+  const seen = [];
+  for (let i = 0; i < 600; i++) {
+    motion.update(1 / 60);
+    seen.push(motion.eyeVariant);
+  }
+  check('the eyes are open most of the time',
+    seen.filter((v) => v === 'open').length > seen.length * 0.6);
+  check('all three drawings get used', new Set(seen).size === 3,
+    [...new Set(seen)].join(','));
+
+  // Every run of non-open frames should read half -> closed -> half, never
+  // cutting straight from open to shut.
+  const runs = [];
+  let current = null;
+  for (const v of seen) {
+    if (v === 'open') {
+      if (current) runs.push(current);
+      current = null;
+    } else {
+      current = current ? current + v[0] : v[0];
+    }
+  }
+  if (current) runs.push(current);
+  check('every blink starts and ends half-lidded',
+    runs.length > 0 && runs.every((r) => r.startsWith('h') && r.endsWith('h')),
+    runs.slice(0, 4).join(' '));
+  check('and is shut in the middle', runs.every((r) => r.includes('c')));
+}
+
+console.log('\nblinking stays consistent with the old boolean');
+{
+  const motion = new PortraitMotion({ blinkEvery: [0.2, 0.2], blinkDuration: 0.12 });
+  let mismatches = 0;
+  for (let i = 0; i < 600; i++) {
+    motion.update(1 / 60);
+    if (motion.blinking !== (motion.eyeVariant !== 'open')) mismatches++;
+  }
+  check('eyeVariant is "open" exactly when blinking is false', mismatches === 0,
+    `${mismatches} frames disagreed`);
+}
+
 process.exit(summary() ? 0 : 1);

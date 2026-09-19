@@ -8,8 +8,11 @@ const BOX_MARGIN = 16;
 const BOX_HEIGHT = 210;
 const BOX_PAD = 18;
 const LINE_HEIGHT = 25;
-const PORTRAIT_W = 300;
-const PORTRAIT_H = 540; // matches a ~9:16 half-body/full-body crop, not tied to any source image's own pixel size
+// The box a portrait is drawn into. Its shape has to match the art's own
+// aspect (both characters' part canvases are ~0.558 wide for their height) or
+// the character is stretched; the SIZE is just how big she reads on screen.
+const PORTRAIT_W = 422;
+const PORTRAIT_H = 760;
 
 // Closer together than a landscape layout could afford - VIEW is much
 // narrower now, and two portraits at POSITION_X's spread naturally overlap a

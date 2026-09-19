@@ -106,9 +106,12 @@ const HERO_RIG = buildRig({
 // x from the left, y from the TOP). She stands slightly left of centre in
 // her own art because the skirt flares to the right.
 const SENPAI_RIG = [
-  // Long hair, behind everything, springing off the head. The loosest thing
-  // on the character and the single biggest reason she reads as alive.
-  { name: 'hair_back', parent: 'head', pivot: [0.42, 0.035], spring: { stiffness: 110, damping: 9, amount: 1.5 } },
+  // Long hair, behind everything, lagging the head. `amount` is the important
+  // number: it is how much of the spring's deviation from the head is actually
+  // applied, and it is what decides whether the hair reads as attached. Too
+  // high and the hair swings independently of the skull, which looks like a
+  // wig sliding around rather than hair moving.
+  { name: 'hair_back', parent: 'head', pivot: [0.42, 0.035], spring: { stiffness: 150, damping: 13, amount: 0.5 } },
 
   // Legs. The one part that genuinely does not move - it is what makes
   // everything above it read as motion rather than the whole image drifting.
@@ -136,14 +139,22 @@ const SENPAI_RIG = [
   // something that reads as her shifting her weight.
   { name: 'head', parent: 'torso', pivot: [0.43, 0.205], tilt: -0.9, sway: 1.2 },
 
-  // Irises, over the face's own eye whites. Deliberately NOT marked `blink`:
-  // that would make the renderer ask for closed.png, which does not exist,
-  // and the part would vanish for the length of every blink.
-  { name: 'eyes', parent: 'head', pivot: [0.43, 0.205] },
+  // The whole eye, blinking open -> half -> closed -> half -> open.
+  //
+  // `closed.png` is NOT purely the artist's work and should be replaced when
+  // it can be. The artist's shut.png is a lash line only, drawn on the
+  // assumption that nothing is underneath - but the face layer has her eye
+  // whites painted on, so that lash line alone left two white eyes showing
+  // through every blink. closed.png is shut.png over a patch that fills just
+  // the sclera with the eyelid's own skin tone. See the README.
+  { name: 'eyes', parent: 'head', blink: true, pivot: [0.43, 0.205] },
+
+  // Lip sync. Driven by the talk timer, not by `layers`: closed / half / open.
+  { name: 'mouth', parent: 'head', talk: true, pivot: [0.43, 0.205] },
 
   // Bangs. Stiffer and lighter than the hair behind, so the two never swing
   // as one slab.
-  { name: 'hair_front', parent: 'head', pivot: [0.42, 0.035], spring: { stiffness: 170, damping: 11, amount: 0.9 } },
+  { name: 'hair_front', parent: 'head', pivot: [0.42, 0.035], spring: { stiffness: 210, damping: 15, amount: 0.35 } },
 
   // The waist ties: tiny, loose, and the fastest thing on her.
   { name: 'bows', parent: 'torso', pivot: [0.44, 0.36], spring: { stiffness: 220, damping: 8, amount: 1.4 } },
@@ -175,7 +186,6 @@ export function createDemoCharacters() {
         bodice: 'default',
         arm_r: 'default',
         head: 'default',
-        eyes: 'default',
         hair_front: 'default',
         bows: 'default',
       },
