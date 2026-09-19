@@ -1,68 +1,51 @@
-// Unified input: keyboard + gamepad + on-screen touch buttons, exposed as
-// named actions.
+// Unified input for a dialogue-driven game: keyboard + gamepad + on-screen
+// taps, exposed as named actions.
 //
-// Every action reports three things, which is what responsive platformer code
+// Every action reports three things, which is what a text-heavy game
 // actually needs:
 //   down(a)      - held this frame
 //   pressed(a)   - went down on this frame (edge)
 //   released(a)  - went up on this frame (edge)
 //
-// Keyboard, gamepad and touch state are tracked in separate sets and unioned
-// each poll. Sharing one set would let an idle controller clear a key the
-// player is holding.
+// Keyboard, gamepad and touch/pointer state are tracked in separate sets and
+// unioned each poll. Sharing one set would let an idle controller clear a key
+// the player is holding.
 //
-// Touch has no keyboard/gamepad to poll - `touch-controls.js` calls
-// touchDown()/touchUp() directly from its own pointer event listeners, and
-// this class just treats that as a third input source alongside the other
-// two. Nothing downstream (Player, DialogueScene, ...) needs to know or care
-// which source an action came from.
+// There is no dedicated touch-controls module here - a visual novel's only
+// touch surface is "tap the screen to advance" / "tap a choice to pick it",
+// which the dialogue scene itself handles by calling touchDown()/touchUp()
+// directly from pointer events on the canvas. Nothing downstream (DialogueRunner,
+// DialogueScene) needs to know or care which source an action came from.
 
 const KEY_MAP = {
-  KeyA: 'left',
-  ArrowLeft: 'left',
-  KeyD: 'right',
-  ArrowRight: 'right',
-  KeyW: 'up',
+  Enter: 'confirm',
+  Space: 'confirm',
+  KeyZ: 'confirm',
   ArrowUp: 'up',
-  KeyS: 'down',
+  KeyW: 'up',
   ArrowDown: 'down',
-  Space: 'jump',
-  KeyK: 'jump',
-  KeyJ: 'fire',
-  KeyZ: 'fire',
-  KeyE: 'interact',
-  KeyL: 'dash',
-  ShiftLeft: 'dash',
-  ShiftRight: 'dash',
-  KeyR: 'restart',
+  KeyS: 'down',
+  KeyA: 'auto', // toggle auto-advance, matches the "Auto" button most VNs have
+  ControlLeft: 'skip', // hold to fast-forward through already-seen text
+  ControlRight: 'skip',
   Escape: 'pause',
-  KeyP: 'pause',
   KeyM: 'mute',
-  F3: 'debug',
 };
 
 // Standard gamepad button indices -> actions
 const PAD_MAP = {
-  0: 'jump', // A
-  1: 'dash', // B
-  2: 'fire', // X
-  3: 'interact', // Y
-  5: 'dash', // RB
-  7: 'fire', // RT
+  0: 'confirm', // A
+  1: 'pause', // B
   9: 'pause', // Start
   12: 'up',
   13: 'down',
-  14: 'left',
-  15: 'right',
 };
-
-const DEADZONE = 0.35;
 
 export class Input {
   constructor(target = window) {
     this.keys = new Set(); // keyboard-held actions
     this.pad = new Set(); // gamepad-held actions
-    this.touch = new Set(); // on-screen touch-button-held actions
+    this.touch = new Set(); // on-screen touch/pointer-held actions
     // Actions that saw a keydown since the last poll. Key events arrive from the
     // browser at an arbitrary rate while polling happens at a fixed 60Hz, so a
     // tap shorter than one step would otherwise be added and removed between
@@ -73,15 +56,13 @@ export class Input {
     this.prev = new Set();
     this.justPressed = new Set();
     this.justReleased = new Set();
-    this.axisX = 0;
-    this.axisY = 0;
     this.anyInputHit = false;
 
     target.addEventListener('keydown', (e) => {
       const action = KEY_MAP[e.code];
       this.anyInputHit = true;
       if (!action) return;
-      e.preventDefault(); // stop the page scrolling when the player jumps
+      e.preventDefault();
       if (!e.repeat) this.pending.add(action);
       this.keys.add(action);
     });
@@ -102,10 +83,10 @@ export class Input {
     });
   }
 
-  // Called by touch-controls.js on pointerdown/pointerup for an on-screen
-  // button. Mirrors the keydown/keyup handlers above: a fresh press is
-  // latched into `pending` so it survives to the next poll() even if it
-  // happens to land between two polls, exactly like a fast keyboard tap.
+  // Called from pointer/click handlers on the canvas. Mirrors the
+  // keydown/keyup handlers above: a fresh press is latched into `pending` so
+  // it survives to the next poll() even if it happens to land between two
+  // polls, exactly like a fast keyboard tap.
   touchDown(action) {
     if (!this.touch.has(action)) this.pending.add(action);
     this.touch.add(action);
@@ -129,14 +110,11 @@ export class Input {
     for (const a of this.actions) if (!this.prev.has(a)) this.justPressed.add(a);
     for (const a of this.prev) if (!this.actions.has(a)) this.justReleased.add(a);
     this.prev = new Set(this.actions);
-
-    this.axisX = (this.down('right') ? 1 : 0) - (this.down('left') ? 1 : 0);
-    this.axisY = (this.down('down') ? 1 : 0) - (this.down('up') ? 1 : 0);
   }
 
   _pollGamepad() {
     this.pad.clear();
-    if (!navigator.getGamepads) return;
+    if (typeof navigator === 'undefined' || !navigator.getGamepads) return;
     const gp = [...navigator.getGamepads()].find(Boolean);
     if (!gp) return;
 
@@ -147,13 +125,6 @@ export class Input {
         this.anyInputHit = true;
       }
     }
-
-    const [lx = 0, ly = 0] = gp.axes;
-    if (lx < -DEADZONE) this.pad.add('left');
-    else if (lx > DEADZONE) this.pad.add('right');
-    if (ly < -DEADZONE) this.pad.add('up');
-    else if (ly > DEADZONE) this.pad.add('down');
-    if (this.pad.size) this.anyInputHit = true;
   }
 
   down(a) {

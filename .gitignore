@@ -4,3 +4,7 @@ package-lock.json
 
 # scratch files from local debugging
 .*.tmp.mjs
+
+# python bytecode from importing tools/ as modules
+__pycache__/
+*.pyc

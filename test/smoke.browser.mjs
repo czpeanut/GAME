@@ -1,9 +1,10 @@
 // End-to-end smoke test: boots the real page in Chromium, drives it with real
-// key events, and fails on any console error, page error or failed request.
+// key/pointer events, and fails on any console error, page error or failed
+// request.
 //
-// The unit tests cover physics and level geometry; this covers the things only
-// a browser can prove - that the modules load, the canvas renders, and a whole
-// frame of the game loop runs without throwing.
+// The unit tests cover DialogueRunner/Stage/StoryState logic; this covers the
+// things only a browser can prove - that the modules load, the canvas
+// renders, and a whole run through the demo script works without throwing.
 //
 // Optional: requires `npm i` (playwright) and a running server. Skips cleanly
 // if either is missing, so `npm test` never fails because of environment.
@@ -48,12 +49,30 @@ try {
 
 const executablePath = findChromium();
 const browser = await chromium.launch(executablePath ? { executablePath } : {});
-const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
+const page = await browser.newPage({ viewport: { width: 1000, height: 620 } });
+
+// The demo content ships with no art (see README - that's by design, the
+// user supplies it later), so every portrait/background PNG the renderer
+// probes for is an *expected* 404: PortraitRenderer's whole point is to fall
+// back to a labelled placeholder instead of breaking. Chromium logs a missing
+// subresource as a console "error" regardless of whether the app handled it
+// gracefully, so those specific 404s against assets/ are not failures here -
+// anything else still is.
+const isExpectedAssetMiss = (url) => /\/assets\/(characters|backgrounds)\//.test(url);
 
 const errors = [];
-page.on('console', (m) => m.type() === 'error' && errors.push(`console: ${m.text()}`));
+page.on('console', (m) => {
+  if (m.type() !== 'error') return;
+  // A failed-resource console error's URL lives in location(), not text() -
+  // the text itself is just the generic "...responded with 404..." message.
+  if (isExpectedAssetMiss(m.location()?.url ?? '')) return;
+  errors.push(`console: ${m.text()}`);
+});
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-page.on('requestfailed', (r) => errors.push(`requestfailed: ${r.url()}`));
+page.on('requestfailed', (r) => {
+  if (isExpectedAssetMiss(r.url())) return;
+  errors.push(`requestfailed: ${r.url()}`);
+});
 
 let failures = 0;
 const check = (name, ok, detail = '') => {
@@ -62,125 +81,69 @@ const check = (name, ok, detail = '') => {
 };
 
 await page.goto(URL_BASE, { waitUntil: 'networkidle' });
-await page.waitForTimeout(600);
+await page.waitForTimeout(300);
 
 console.log('\nboot');
-check('game object is exposed', await page.evaluate(() => !!window.game));
-check('starts on the title screen', (await page.evaluate(() => window.game.state)) === 'title');
+check('app object is exposed', await page.evaluate(() => !!window.app));
+check('starts on the title screen',
+  (await page.evaluate(() => window.app.scenes.top.constructor.name)) === 'TitleScene');
 
-// Start playing. The default game (main.js) opens on a story chapter whose
-// wake-up beat is a cutscene that locks input until dismissed - press confirm
-// a generous number of times to clear it before anything below assumes the
-// player can move. A plain arcade level with no intro would just no-op these
-// extra presses on an already-idle title/world, so this is safe either way.
-await page.keyboard.press('Space');
-await page.waitForTimeout(2500); // covers the wake-up fade-in
-for (let i = 0; i < 15; i++) {
-  const top = await page.evaluate(() => window.game.scenes.top.constructor.name);
-  if (top === 'WorldScene') break;
-  await page.keyboard.press('KeyJ');
-  await page.waitForTimeout(150);
-}
-check('space starts the game', (await page.evaluate(() => window.game.state)) === 'playing');
+console.log('\nstarting the script');
+await page.mouse.click(500, 310); // tap the canvas to start
+await page.waitForTimeout(200);
+check('a tap on the title screen starts the dialogue',
+  (await page.evaluate(() => window.app.scenes.top.constructor.name)) === 'DialogueScene');
 
-console.log('\nmovement and combat');
-// Run far enough right to leave the camera's dead zone and the level's left
-// clamp - near the spawn the camera is *supposed* to stay put. A story level
-// can have a narrative trigger along the way that opens a dialogue and
-// blocks movement until dismissed (the default game does, right after
-// spawn), so this dismisses anything that pops up rather than assuming a
-// single blind hold of the movement key reaches the target distance.
-async function walkRightUntil(targetX, maxSteps = 30) {
+console.log('\nwalking the demo script to its first branch point');
+// hasChoices alone only means "this node's last line has choices" - it can
+// go true before the typewriter has finished revealing that line, in which
+// case the next Enter just finishes the reveal rather than picking anything.
+// Waiting for isFullyRevealed too is what the real DialogueScene gates
+// choice rendering/input on (see dialogue-scene.js), so this matches what a
+// player would actually see before their next press counts as a selection.
+async function pressConfirmUntilChoicesReady(maxSteps = 30) {
   for (let i = 0; i < maxSteps; i++) {
-    const top = await page.evaluate(() => window.game.scenes.top.constructor.name);
-    if (top === 'DialogueScene') {
-      await page.keyboard.press('KeyJ');
-      await page.waitForTimeout(100);
-      continue;
-    }
-    const x = await page.evaluate(() => window.game.player.x);
-    if (x > targetX) return x;
-    await page.keyboard.down('KeyD');
-    await page.waitForTimeout(150);
+    const ready = await page.evaluate(() => {
+      const r = window.app.scenes.top.runner;
+      return !!r && r.hasChoices && r.isFullyRevealed;
+    });
+    if (ready) return true;
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(120);
   }
-  await page.keyboard.up('KeyD');
-  return page.evaluate(() => window.game.player.x);
+  return false;
 }
+const reachedChoices = await pressConfirmUntilChoicesReady();
+check('the script reaches its first set of choices', reachedChoices);
 
-const reachedX = await walkRightUntil(400);
-await page.keyboard.up('KeyD');
-const cam = await page.evaluate(() => window.game.camera.x);
-check('player moves right', reachedX > 400, `x=${reachedX.toFixed(0)}`);
-check('camera scrolls with the player', cam > 0, `camX=${cam.toFixed(0)}`);
+console.log('\npicking the "good" choice and checking the score var updates');
+const scoreBefore = await page.evaluate(() => window.app.story.getVar('score', 0));
+await page.keyboard.press('Enter'); // selects the highlighted (first) choice - the polite phrasing
+await page.waitForTimeout(150);
+const scoreAfter = await page.evaluate(() => window.app.story.getVar('score', 0));
+check('choosing the well-phrased option raises the score var', scoreAfter > scoreBefore,
+  `before=${scoreBefore} after=${scoreAfter}`);
 
-// Firing and dash may be gated by story progression in the default game
-// (they are here: the player starts unarmed, and dash is locked). This
-// checks the mechanisms themselves work once available, the same way
-// picking up a weapon or an adrenaline shot eventually enables them - the
-// pacing of *when* that happens is the story content's job to test
-// (test/opening.test.mjs), not this one's.
-await page.evaluate(() => {
-  window.game.player.equipWeapon('pistol');
-  window.game.story.grantAbility('dash');
-});
+console.log('\nreaching the end and restarting');
+for (let i = 0; i < 15; i++) {
+  const top = await page.evaluate(() => window.app.scenes.top.constructor.name);
+  if (top === 'EndScene') break;
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+}
+check('the script eventually reaches the end screen',
+  (await page.evaluate(() => window.app.scenes.top.constructor.name)) === 'EndScene');
 
-// Checked via score/shots-fired bookkeeping rather than the live bullets
-// array: a fired bullet can hit a wall or enemy and be swept from that array
-// well within a longer wait, depending on where this lands in the level, so
-// "was one ever spawned" needs a signal that survives the bullet's own
-// lifetime - the total fired count does.
-const firedBefore = await page.evaluate(() => window.game.world.bulletsFiredDebug ?? 0);
-await page.evaluate(() => {
-  // Count every spawnBullet call without changing production behaviour.
-  const w = window.game.world;
-  if (!w._spawnBulletWrapped) {
-    const original = w.spawnBullet.bind(w);
-    w.bulletsFiredDebug = 0;
-    w.spawnBullet = (...args) => {
-      w.bulletsFiredDebug++;
-      return original(...args);
-    };
-    w._spawnBulletWrapped = true;
-  }
-});
-await page.keyboard.down('KeyJ');
-await page.waitForTimeout(120); // pistol's attackCd starts at 0 right after
-// equip, so the first shot fires on the very next simulated frame - no need
-// to wait out a full fireRate cycle just to observe it.
-const firedAfter = await page.evaluate(() => window.game.world.bulletsFiredDebug ?? 0);
-check('firing spawns bullets once armed', firedAfter > firedBefore,
-  `fired before=${firedBefore} after=${firedAfter}`);
-await page.keyboard.up('KeyJ');
-
-await page.keyboard.down('KeyD');
-await page.waitForTimeout(80);
-await page.keyboard.press('ShiftLeft');
-await page.waitForTimeout(80);
-check('dash activates once granted', await page.evaluate(() => window.game.player.dashT > 0));
-await page.waitForTimeout(400);
-await page.keyboard.up('KeyD');
+await page.keyboard.press('Enter'); // restart
+await page.waitForTimeout(200);
+check('restarting from the end screen goes straight back into a fresh dialogue',
+  (await page.evaluate(() => window.app.scenes.top.constructor.name)) === 'DialogueScene');
+check('the score var resets on restart',
+  (await page.evaluate(() => window.app.story.getVar('score', 0))) === 0);
 
 console.log('\nstability');
-const finite = await page.evaluate(() => {
-  const p = window.game.player;
-  return [p.x, p.y, p.body.vx, p.body.vy, window.game.camera.x].every(Number.isFinite);
-});
-check('no NaN in player or camera state', finite);
-
-const fps = await page.evaluate(() => window.game.loop.fps);
+const fps = await page.evaluate(() => window.app.loop.fps);
 check('runs at a playable frame rate', fps > 45, `${fps.toFixed(0)} fps`);
-
-console.log('\ndeath and respawn');
-await page.evaluate(() => window.game.player.kill());
-await page.waitForTimeout(700);
-check('death is registered', (await page.evaluate(() => window.game.state)) === 'dead');
-await page.keyboard.press('KeyR');
-await page.waitForTimeout(400);
-const after = await page.evaluate(() => ({
-  state: window.game.state,
-  hp: window.game.player.health,
-}));
-check('respawn restores play', after.state === 'playing', `hp=${after.hp}`);
 
 console.log('\nconsole output');
 check('no errors logged', errors.length === 0, errors.join(' | ') || 'clean');

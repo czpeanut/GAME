@@ -1,9 +1,9 @@
 // DialogueRunner tests: node walking, typewriter reveal, branching choices,
 // and flag/action side effects. No canvas involved.
 
-import { DialogueRunner } from '../src/game/dialogue-runner.js';
-import { DialogueScene } from '../src/game/scenes/dialogue-scene.js';
-import { StoryState } from '../src/game/story-state.js';
+import { DialogueRunner } from '../src/vn/dialogue-runner.js';
+import { DialogueScene } from '../src/vn/scenes/dialogue-scene.js';
+import { StoryState } from '../src/vn/story-state.js';
 import { StubInput, check, summary } from './harness.mjs';
 
 console.log('\nlinear script: lines advance, then the conversation ends');
@@ -118,17 +118,17 @@ console.log('\nflags: node and choice flags reach StoryState');
   check('picking a choice with a flag sets it', story.hasFlag('agreed'));
 }
 
-console.log('\nactions receive the world/game context');
+console.log('\nactions receive the stage/app context');
 {
-  const world = { marker: 'the-world' };
-  const game = { marker: 'the-game', story: new StoryState() };
+  const stage = { marker: 'the-stage' };
+  const app = { marker: 'the-app', story: new StoryState() };
   let seen = null;
   const script = {
     start: 'a',
     nodes: { a: { lines: ['...'], action: (w, g) => { seen = { w, g }; } } },
   };
-  new DialogueRunner(script, { world, game });
-  check('the node action receives world and game', seen.w === world && seen.g === game);
+  new DialogueRunner(script, { world: stage, game: app });
+  check('the node action receives stage and app', seen.w === stage && seen.g === app);
 }
 
 console.log('\nrobustness');
@@ -149,24 +149,29 @@ console.log('\nrobustness');
   check('a flag on a node with no game/story attached does not throw', !noGame.finished);
 }
 
-console.log('\nDialogueScene: a confirm key already held when the box opens still works');
+function stubApp() {
+  return {
+    stage: { setSpeaker() {}, update() {} },
+    audio: new Proxy({}, { get: () => () => {} }),
+    characters: {},
+  };
+}
+
+console.log('\nDialogueScene: a confirm key already held when the scene opens still works');
 {
-  // Regression: input.pressed() is edge-triggered, so a fire/interact key
-  // that was already down the instant a DialogueScene opens (very plausible
-  // once melee combat made "hold fire" normal) would never see a fresh press
-  // and could stall the conversation forever without this fallback.
+  // Regression: input.pressed() is edge-triggered, so a confirm key that was
+  // already down the instant a DialogueScene opens would never see a fresh
+  // press and could stall the conversation forever without this fallback.
   const script = { start: 'a', nodes: { a: { lines: ['一'], next: 'b' }, b: { lines: ['二'] } } };
-  const popped = { value: false };
-  const game = { world: {}, scenes: { pop: () => { popped.value = true; } } };
-  const scene = new DialogueScene(game, script, { charsPerSecond: 1000 });
+  const scene = new DialogueScene(stubApp(), script, { charsPerSecond: 1000 });
 
   const input = new StubInput();
-  input.set(['fire']); // held from before the scene existed - no edge this frame
+  input.set(['confirm']); // held from before the scene existed - no edge this frame
 
   const STEP = 1 / 60;
   let advanced = false;
   for (let f = 0; f < 60; f++) {
-    input.set(['fire']); // still just held, never released
+    input.set(['confirm']); // still just held, never released
     scene.update(STEP, input);
     if (scene.runner.nodeId === 'b') {
       advanced = true;
@@ -178,14 +183,57 @@ console.log('\nDialogueScene: a confirm key already held when the box opens stil
 
   // A quick tap still behaves exactly as before: no artificial delay.
   const script2 = { start: 'a', nodes: { a: { lines: ['一'], next: 'b' }, b: { lines: ['二'] } } };
-  const scene2 = new DialogueScene(game, script2, { charsPerSecond: 1000 });
+  const scene2 = new DialogueScene(stubApp(), script2, { charsPerSecond: 1000 });
   const input2 = new StubInput();
   input2.set([]);
   scene2.update(STEP, input2); // reveal frame
-  input2.set(['fire']); // fresh press edge
+  input2.set(['confirm']); // fresh press edge
   scene2.update(STEP, input2);
   check('a fresh press still confirms on the very next update, no delay',
     scene2.runner.isFullyRevealed || scene2.runner.nodeId === 'b');
+}
+
+console.log('\nDialogueScene: picking a choice by tapping its rendered position');
+{
+  const makeScene = () => {
+    const script = {
+      start: 'a',
+      nodes: {
+        a: {
+          lines: ['選一個：'],
+          choices: [
+            { text: '甲', next: 'b' },
+            { text: '乙', next: 'c' },
+          ],
+        },
+        b: { lines: ['選了甲'] },
+        c: { lines: ['選了乙'] },
+      },
+    };
+    const scene = new DialogueScene(stubApp(), script, { charsPerSecond: 1000 });
+    scene.update(1 / 60, new StubInput()); // reveal the line
+    return scene;
+  };
+
+  // A canvas is not available in Node, so render() (which computes
+  // _choiceRects) never runs here - a tap with no rects recorded yet falls
+  // back to confirm() instead of throwing or silently doing nothing.
+  const untapped = makeScene();
+  const noThrow = (() => {
+    try { untapped.pointerTap(10, 10); return true; } catch { return false; }
+  })();
+  check('with no rendered choice rects, a tap falls back to confirm without throwing', noThrow);
+  check('that fallback confirm picked the highlighted (first) choice', untapped.runner.nodeId === 'b');
+
+  // Directly exercise the hit-test logic pointerTap uses once rects exist,
+  // the way render() would have populated them.
+  const tapped = makeScene();
+  tapped._choiceRects = [
+    { index: 0, x: 0, y: 0, w: 100, h: 20 },
+    { index: 1, x: 0, y: 20, w: 100, h: 20 },
+  ];
+  tapped.pointerTap(50, 25); // inside the second rect
+  check('tapping inside a choice rect selects that choice', tapped.runner.nodeId === 'c');
 }
 
 process.exit(summary() ? 0 : 1);
