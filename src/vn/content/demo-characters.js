@@ -108,31 +108,33 @@ const HERO_RIG = buildRig({
 const SENPAI_RIG = [
   // Long hair, behind everything, springing off the head. The loosest thing
   // on the character and the single biggest reason she reads as alive.
-  { name: 'hair_back', parent: 'head', pivot: [0.42, 0.035], spring: { stiffness: 60, damping: 9, amount: 1.35 } },
+  { name: 'hair_back', parent: 'head', pivot: [0.42, 0.035], spring: { stiffness: 110, damping: 9, amount: 1.5 } },
 
   // Legs. The one part that genuinely does not move - it is what makes
   // everything above it read as motion rather than the whole image drifting.
   { name: 'lower', pivot: [0.44, 1] },
 
-  // Waist to shoulders, carrying the breath. Her left arm is painted into
-  // this layer, so it moves with the body rather than on its own.
-  { name: 'torso', pivot: [0.44, 0.36], breathe: 1, tilt: 1 },
+  // Waist to shoulders. Both rotation channels, on their own periods, so the
+  // body is never repeating one obvious loop.
+  { name: 'torso', pivot: [0.44, 0.36], breathe: 1.6, tilt: 3, sway: 1.2 },
 
-  // The skirt hangs off the waist. It is the biggest piece of loose cloth on
-  // her, so it gets the softest, slowest spring of anything here - a dress
-  // that moves a beat behind the body is most of what sells this character.
-  { name: 'skirt', parent: 'torso', pivot: [0.44, 0.36], sway: 0.9, spring: { stiffness: 30, damping: 7, amount: 0.9 } },
+  // The skirt hangs off the waist and swings well past the body, because it
+  // can: there is a whole painted figure behind it. A dress that follows a
+  // beat late is most of what sells this character.
+  { name: 'skirt', parent: 'torso', pivot: [0.44, 0.36], sway: 2.6, spring: { stiffness: 70, damping: 8, amount: 1.1 } },
 
   // The bodice is cloth too, but fitted, so it just rides the torso.
   { name: 'bodice', parent: 'torso', pivot: [0.44, 0.36] },
 
   // The raised arm needs a drift of its own, not just a spring: the torso
-  // barely rotates, so lag alone comes out at a fraction of a degree and the
-  // arm reads as welded on.
-  { name: 'arm_r', parent: 'torso', pivot: [0.56, 0.245], sway: -1.1, spring: { stiffness: 42, damping: 9, amount: 0.6 } },
+  // rotates little enough that lag alone comes out at a fraction of a degree
+  // and the arm reads as welded on. Opposite sign to the skirt so the two
+  // never swing as one slab.
+  { name: 'arm_r', parent: 'torso', pivot: [0.56, 0.245], sway: -2.6, spring: { stiffness: 80, damping: 10, amount: 0.7 } },
 
-  // The head rides the torso, already lifted by the chest expanding under it.
-  { name: 'head', parent: 'torso', pivot: [0.43, 0.205], tilt: -0.3, sway: 0.35 },
+  // The head counter-rotates against the torso, which turns a stiff sway into
+  // something that reads as her shifting her weight.
+  { name: 'head', parent: 'torso', pivot: [0.43, 0.205], tilt: -0.9, sway: 1.2 },
 
   // Irises, over the face's own eye whites. Deliberately NOT marked `blink`:
   // that would make the renderer ask for closed.png, which does not exist,
@@ -141,16 +143,21 @@ const SENPAI_RIG = [
 
   // Bangs. Stiffer and lighter than the hair behind, so the two never swing
   // as one slab.
-  { name: 'hair_front', parent: 'head', pivot: [0.42, 0.035], spring: { stiffness: 105, damping: 9, amount: 0.8 } },
+  { name: 'hair_front', parent: 'head', pivot: [0.42, 0.035], spring: { stiffness: 170, damping: 11, amount: 0.9 } },
 
   // The waist ties: tiny, loose, and the fastest thing on her.
-  { name: 'bows', parent: 'torso', pivot: [0.44, 0.36], spring: { stiffness: 130, damping: 6, amount: 1.2 } },
+  { name: 'bows', parent: 'torso', pivot: [0.44, 0.36], spring: { stiffness: 220, damping: 8, amount: 1.4 } },
 ];
 
-// A factory (not a shared singleton) because App.startScript() calls this
-// fresh on every playthrough, so a previous run's changes never leak into
-// the next one.
-//
+// Faster than the defaults, which were set for a character cut from a flat
+// illustration and had to stay timid. Nothing here is a loop anyone can count:
+// the three periods are deliberately not multiples of each other.
+const SENPAI_MOTION = {
+  breathePeriod: 3.2,
+  tiltPeriod: 4.3,
+  swayPeriod: 3.1,
+};
+
 // `layers` names the variant showing in each part. A part with no art file is
 // simply skipped, so a rig can stay complete while the art arrives piece by
 // piece - which is why HERO_RIG can keep declaring parts nobody has drawn yet.
@@ -159,6 +166,7 @@ export function createDemoCharacters() {
     senpai: new Character('senpai', {
       name: '學姊',
       rig: SENPAI_RIG,
+      motion: SENPAI_MOTION,
       layers: {
         hair_back: 'default',
         lower: 'default',

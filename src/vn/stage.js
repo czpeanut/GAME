@@ -36,7 +36,9 @@ export class Stage {
     if (!character) return;
     this.hide(characterId); // moving an already-shown character, not duplicating it
     this.slots[position] = characterId;
-    if (!this.motions[characterId]) this.motions[characterId] = new PortraitMotion();
+    if (!this.motions[characterId]) {
+      this.motions[characterId] = new PortraitMotion(character?.motion ?? undefined);
+    }
     if (!this.rigs[characterId]) {
       const rig = new Rig(character.rig);
       rig.settle(); // start at rest rather than swinging in from zero

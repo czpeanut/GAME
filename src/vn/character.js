@@ -23,12 +23,18 @@
 // The asset file for a given (character, part, variant) triple is expected
 // at `assets/characters/<characterId>/<part>/<variant>.png`.
 export class Character {
-  constructor(id, { name, rig = [], layers = {}, expression = 'neutral' } = {}) {
+  constructor(id, { name, rig = [], layers = {}, expression = 'neutral', motion = null } = {}) {
     this.id = id;
     this.name = name ?? id;
     this.rig = rig.map((part) => ({ ...part }));
     this.layers = { ...layers };
     this.expression = expression;
+    // Optional PortraitMotion settings - how FAST this character's idle
+    // cycles run. How FAR each part moves is the rig's per-part weights.
+    // A character cut from a flat illustration has to keep both small or its
+    // seams show; one built from real layers has no such limit, so the two
+    // cannot share one setting.
+    this.motion = motion;
   }
 
   // Part names in draw order.
@@ -65,6 +71,7 @@ export class Character {
       rig: this.rig,
       layers: this.layers,
       expression: this.expression,
+      motion: this.motion,
     });
   }
 }

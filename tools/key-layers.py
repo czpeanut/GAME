@@ -13,6 +13,15 @@ character wears a cream dress and has white highlights in her eyes, and a
 brightness threshold punches holes straight through both. White enclosed by
 the drawing is not reachable from outside, so it survives.
 
+That alone is not enough, though. Loose hair encloses page background between
+its strands, and those pockets are not reachable from the border either - they
+come out as opaque white blobs, invisible against a white page and glaring
+against anything else. So a second pass clears enclosed regions that are
+NEARLY PURE white, on a much tighter threshold than the border flood: measured
+on this character, the hair's trapped pockets are 250+, while the cream dress
+never exceeds 237 and the eye highlights never exceed 247. Art that really does
+contain large pure-white areas needs --enclosed-white raised or set to 0.
+
 The crop is shared by every layer, which is what keeps the parts aligned with
 each other - the whole rig depends on that. Without --crop it is computed from
 all the layers together, with a little margin, and squared up to the aspect the
@@ -30,6 +39,10 @@ Example:
 Options:
     --tolerance N   how far from pure white still counts as background
                     (default 18; JPEG never gives you exactly 255)
+    --enclosed-white N   a region the flood could not reach is cleared too if
+                    every channel is at least this bright (default 250) and it
+                    is at least --enclosed-min px. 0 turns the pass off.
+    --enclosed-min N     smallest enclosed pocket worth clearing (default 12)
     --crop x0,y0,x1,y1   crop box in source pixels, instead of computing one
     --aspect W/H    shape the computed crop to this (default 402/720, the
                     portrait box the engine draws into)
@@ -46,6 +59,45 @@ import sys
 from collections import deque
 
 from PIL import Image
+
+
+def clear_enclosed_white(im, alpha, white, min_area):
+    """Pockets of page background the border flood could not get to - the gaps
+    between strands of hair, most often. Returns how many pixels were cleared."""
+    if not white:
+        return 0
+    w, h = im.size
+    rgb = im.convert("RGB").load()
+    ap = alpha.load()
+    seen = bytearray(w * h)
+    cleared = 0
+
+    def is_white(x, y):
+        r, g, b = rgb[x, y]
+        return min(r, g, b) >= white
+
+    for start in range(w * h):
+        sx, sy = start % w, start // w
+        if seen[start] or ap[sx, sy] < 40 or not is_white(sx, sy):
+            continue
+        queue = deque([start])
+        seen[start] = 1
+        region = [start]
+        while queue:
+            i = queue.popleft()
+            x, y = i % w, i // w
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if 0 <= nx < w and 0 <= ny < h:
+                    j = ny * w + nx
+                    if not seen[j] and ap[nx, ny] >= 40 and is_white(nx, ny):
+                        seen[j] = 1
+                        queue.append(j)
+                        region.append(j)
+        if len(region) >= min_area:
+            for i in region:
+                ap[i % w, i // w] = 0
+            cleared += len(region)
+    return cleared
 
 
 def background_mask(im, tolerance):
@@ -112,7 +164,8 @@ def common_crop(boxes, size, aspect, margin, feet):
 def main():
     args = sys.argv[1:]
     opts = {"tolerance": 18, "crop": None, "aspect": 402 / 720,
-            "margin": 0.03, "feet": 0.015, "dry_run": False}
+            "margin": 0.03, "feet": 0.015, "dry_run": False,
+            "enclosed_white": 250, "enclosed_min": 12}
     positional = []
 
     i = 0
@@ -120,7 +173,8 @@ def main():
         a = args[i]
         if a == "--dry-run":
             opts["dry_run"] = True
-        elif a in ("--tolerance", "--crop", "--aspect", "--margin", "--feet"):
+        elif a in ("--tolerance", "--crop", "--aspect", "--margin", "--feet",
+                   "--enclosed-white", "--enclosed-min"):
             if i + 1 >= len(args):
                 sys.exit(f"! {a} needs a value")
             value = args[i + 1]
@@ -134,6 +188,10 @@ def main():
                 opts["aspect"] = float(w) / float(h)
             elif a == "--margin":
                 opts["margin"] = float(value)
+            elif a == "--enclosed-white":
+                opts["enclosed_white"] = int(value)
+            elif a == "--enclosed-min":
+                opts["enclosed_min"] = int(value)
             else:
                 opts["feet"] = float(value)
         else:
@@ -162,12 +220,14 @@ def main():
             sys.exit(f"! {path} is {im.size}, but the first layer is {size}. "
                      "Every layer must be exported on the same canvas.")
         alpha = background_mask(im, opts["tolerance"])
+        pockets = clear_enclosed_white(im, alpha, opts["enclosed_white"], opts["enclosed_min"])
         box = alpha.getbbox()
         if box is None:
             sys.exit(f"! {path} is blank once the background is keyed out")
         keyed.append((part, path, im, alpha, box))
+        note = f"  (+{pockets} px of trapped background cleared)" if pockets else ""
         print(f"  {part:<12} {os.path.basename(path):<22} "
-              f"{sum(alpha.histogram()[200:]):>7} opaque px")
+              f"{sum(alpha.histogram()[200:]):>7} opaque px{note}")
 
     crop = opts["crop"] or common_crop([k[4] for k in keyed], size, opts["aspect"],
                                        opts["margin"], opts["feet"])
