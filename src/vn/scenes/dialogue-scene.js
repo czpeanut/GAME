@@ -3,13 +3,18 @@ import { DialogueRunner } from '../dialogue-runner.js';
 import { wrapText } from '../../engine/text.js';
 import { coverRect } from '../../engine/math.js';
 import { VIEW, FONT, NAME_FONT } from '../constants.js';
+import { THEME, roundedRect } from '../theme.js';
 
 const BOX_MARGIN = 16;
-const BOX_HEIGHT = 210;
-const BOX_PAD = 18;
-const LINE_HEIGHT = 25;
-const PORTRAIT_W = 300;
-const PORTRAIT_H = 540; // matches a ~9:16 half-body/full-body crop, not tied to any source image's own pixel size
+const BOX_HEIGHT = 214;
+const BOX_PAD = 24;
+const LINE_HEIGHT = 30;
+const BOX_RADIUS = 18;
+// The box a portrait is drawn into. Its shape has to match the art's own
+// aspect (both characters' part canvases are ~0.558 wide for their height) or
+// the character is stretched; the SIZE is just how big she reads on screen.
+const PORTRAIT_W = 422;
+const PORTRAIT_H = 760;
 
 // Closer together than a landscape layout could afford - VIEW is much
 // narrower now, and two portraits at POSITION_X's spread naturally overlap a
@@ -177,30 +182,55 @@ export class DialogueScene extends Scene {
     const boxH = BOX_HEIGHT;
 
     ctx.save();
-    ctx.fillStyle = 'rgba(8,10,20,0.92)';
-    ctx.strokeStyle = 'rgba(127,212,255,0.4)';
+
+    // A soft panel rather than a hard-edged frame: rounded, warm, and lifted
+    // off the art by a shadow instead of a hairline border.
+    ctx.shadowColor = THEME.panelShadow;
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 4;
+    ctx.fillStyle = THEME.panel;
+    roundedRect(ctx, boxX, boxY, boxW, boxH, BOX_RADIUS);
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.strokeStyle = THEME.panelEdge;
     ctx.lineWidth = 1;
-    ctx.fillRect(boxX, boxY, boxW, boxH);
-    ctx.strokeRect(boxX + 0.5, boxY + 0.5, boxW - 1, boxH - 1);
+    roundedRect(ctx, boxX + 0.5, boxY + 0.5, boxW - 1, boxH - 1, BOX_RADIUS);
+    ctx.stroke();
 
     const speakerChar = this.game.characters[this.runner.speaker];
     const speakerName = speakerChar?.name ?? this.runner.speaker;
     if (speakerName) {
       ctx.font = NAME_FONT;
-      const nameW = ctx.measureText(speakerName).width + 24;
-      ctx.fillStyle = 'rgba(127,212,255,0.9)';
-      ctx.fillRect(boxX + 14, boxY - 16, nameW, 28);
-      ctx.fillStyle = '#08131c';
+      const nameW = ctx.measureText(speakerName).width + 34;
+      const plateH = 32;
+      const plateY = boxY - plateH / 2 - 4;
+      ctx.shadowColor = THEME.panelShadow;
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 3;
+      ctx.fillStyle = THEME.plate;
+      roundedRect(ctx, boxX + 18, plateY, nameW, plateH, plateH / 2);
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      ctx.strokeStyle = THEME.plateEdge;
+      ctx.lineWidth = 1.5;
+      roundedRect(ctx, boxX + 18, plateY, nameW, plateH, plateH / 2);
+      ctx.stroke();
+
+      ctx.fillStyle = THEME.plateText;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(speakerName, boxX + 26, boxY - 2);
+      ctx.fillText(speakerName, boxX + 35, plateY + plateH / 2 + 1);
     }
 
     const lines = this._wrappedLine(ctx, boxW - BOX_PAD * 2);
     const revealed = this.runner.revealedText;
 
     ctx.font = FONT;
-    ctx.fillStyle = '#eaf3ff';
+    ctx.fillStyle = THEME.text;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
 
@@ -236,12 +266,23 @@ export class DialogueScene extends Scene {
     choices.forEach((c, i) => {
       const y = startY + i * LINE_HEIGHT;
       const active = i === this.runner.choiceIndex;
-      ctx.fillStyle = active ? '#ffe9a8' : '#9fb6e8';
-      ctx.fillText(active ? `▸ ${c.text}` : `　${c.text}`, boxX + BOX_PAD, y);
+      const rowY = y - LINE_HEIGHT + 8;
+
+      // The selected line gets a rose pill behind it rather than just a
+      // different text colour - on a phone, in sunlight, colour alone is not
+      // enough to show which option a tap is about to pick.
+      if (active) {
+        ctx.fillStyle = THEME.choicePill;
+        roundedRect(ctx, boxX + BOX_PAD - 10, rowY, boxW - BOX_PAD * 2 + 20, LINE_HEIGHT - 2, (LINE_HEIGHT - 2) / 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = active ? THEME.choiceActive : THEME.choice;
+      ctx.fillText(c.text, boxX + BOX_PAD, y);
+
       this._choiceRects.push({
         index: i,
         x: boxX,
-        y: y - LINE_HEIGHT + 6,
+        y: rowY,
         w: boxW,
         h: LINE_HEIGHT,
       });
@@ -249,11 +290,15 @@ export class DialogueScene extends Scene {
   }
 
   _renderContinuePrompt(ctx, boxX, boxY, boxW, boxH) {
-    const blink = Math.sin(this.runner.revealT * 6) > 0;
-    if (!blink) return;
-    ctx.fillStyle = '#7fd4ff';
+    // Fades rather than flicks on and off - a hard blink in the corner of a
+    // soft panel is the one thing that still looks like a machine.
+    const pulse = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(this.runner.revealT * 4));
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = THEME.accent;
     ctx.textAlign = 'right';
     ctx.font = FONT;
-    ctx.fillText('▼', boxX + boxW - BOX_PAD, boxY + boxH - 14);
+    ctx.fillText('▼', boxX + boxW - BOX_PAD, boxY + boxH - 16);
+    ctx.restore();
   }
 }

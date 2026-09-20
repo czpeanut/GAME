@@ -10,6 +10,9 @@
 //   tilt        slow sine - idle postural drift
 //   sway        slow sine on a different period - a second, independent drift
 //   blinking    boolean, short closures at randomised intervals
+//   eyeVariant  'open' | 'half' | 'closed' - the same blink, but passing
+//               through a half-lidded frame on the way down and back up,
+//               for characters whose art has one
 //   mouthIndex  0..2 while speaking - which mouth shape to show
 //
 // The idle periods are deliberately not multiples of each other. If they
@@ -90,6 +93,17 @@ export class PortraitMotion {
       this.blinkT = 0;
       this.pendingDoubleBlink = Math.random() < this.doubleBlinkChance;
     }
+  }
+
+  // Which eye drawing to show. A blink that cuts straight from open to shut
+  // and back reads as a glitch at close range; passing through a half-lidded
+  // frame at each end costs two frames and reads as an eyelid. A character
+  // with no `half` art simply never sees that variant, because the renderer
+  // falls back when the file is missing.
+  get eyeVariant() {
+    if (!this.blinking) return 'open';
+    const progress = this.blinkDuration > 0 ? this.blinkT / this.blinkDuration : 1;
+    return progress < 0.25 || progress > 0.75 ? 'half' : 'closed';
   }
 
   _updateMouth(dt, speaking) {

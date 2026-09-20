@@ -94,52 +94,47 @@ await page.waitForTimeout(200);
 check('a tap on the title screen starts the dialogue',
   (await page.evaluate(() => window.app.scenes.top.constructor.name)) === 'DialogueScene');
 
-console.log('\nwalking the demo script to its first branch point');
-// hasChoices alone only means "this node's last line has choices" - it can
-// go true before the typewriter has finished revealing that line, in which
-// case the next Enter just finishes the reveal rather than picking anything.
-// Waiting for isFullyRevealed too is what the real DialogueScene gates
-// choice rendering/input on (see dialogue-scene.js), so this matches what a
-// player would actually see before their next press counts as a selection.
-async function pressConfirmUntilChoicesReady(maxSteps = 30) {
-  for (let i = 0; i < maxSteps; i++) {
-    const ready = await page.evaluate(() => {
-      const r = window.app.scenes.top.runner;
-      return !!r && r.hasChoices && r.isFullyRevealed;
-    });
-    if (ready) return true;
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(120);
-  }
-  return false;
-}
-const reachedChoices = await pressConfirmUntilChoicesReady();
-check('the script reaches its first set of choices', reachedChoices);
-
-console.log('\npicking the "good" choice and checking the score var updates');
-const scoreBefore = await page.evaluate(() => window.app.story.getVar('score', 0));
-await page.keyboard.press('Enter'); // selects the highlighted (first) choice - the polite phrasing
-await page.waitForTimeout(150);
-const scoreAfter = await page.evaluate(() => window.app.story.getVar('score', 0));
-check('choosing the well-phrased option raises the score var', scoreAfter > scoreBefore,
-  `before=${scoreBefore} after=${scoreAfter}`);
-
-console.log('\nreaching the end and restarting');
-for (let i = 0; i < 15; i++) {
-  const top = await page.evaluate(() => window.app.scenes.top.constructor.name);
-  if (top === 'EndScene') break;
+console.log('\nwalking the script through to the end');
+// The demo script is linear now - 學姊 introducing herself - so this walks it
+// rather than looking for a branch. Choices, flags and tapping a rendered
+// choice are covered by test/dialogue.test.mjs against its own fixtures, so
+// dropping them here loses no coverage.
+//
+// hasChoices/isFullyRevealed still matter for pacing: a confirm press while
+// the typewriter is still running finishes the reveal instead of advancing,
+// which is exactly what a player sees, so pressing repeatedly is the honest
+// way to walk it.
+const spoken = new Set();
+let reachedEnd = false;
+for (let i = 0; i < 60; i++) {
+  const state = await page.evaluate(() => {
+    const top = window.app.scenes.top;
+    return {
+      scene: top.constructor.name,
+      text: top.runner?.lineText ?? '',
+      speaker: top.runner?.speaker ?? null,
+    };
+  });
+  if (state.scene === 'EndScene') { reachedEnd = true; break; }
+  if (state.text) spoken.add(state.text);
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(120);
+  await page.waitForTimeout(110);
 }
-check('the script eventually reaches the end screen',
-  (await page.evaluate(() => window.app.scenes.top.constructor.name)) === 'EndScene');
 
-await page.keyboard.press('Enter'); // restart
-await page.waitForTimeout(200);
-check('restarting from the end screen goes straight back into a fresh dialogue',
+check('the script reaches the end screen', reachedEnd);
+check('it showed several lines on the way', spoken.size >= 5, `${spoken.size} distinct lines`);
+check('學姊 is the one speaking',
+  [...spoken].length > 0 && (await page.evaluate(() => Object.keys(window.app.characters))).includes('senpai'));
+check('she says the thing the script is about',
+  [...spoken].some((t) => t.includes('全學年第一')), [...spoken].slice(0, 3).join(' / '));
+
+console.log('\nrestarting');
+await page.keyboard.press('Enter'); // restart from the end screen
+await page.waitForTimeout(250);
+check('restarting goes straight back into a fresh dialogue',
   (await page.evaluate(() => window.app.scenes.top.constructor.name)) === 'DialogueScene');
-check('the score var resets on restart',
-  (await page.evaluate(() => window.app.story.getVar('score', 0))) === 0);
+check('story state is cleared on restart',
+  (await page.evaluate(() => Object.keys(window.app.story.vars).length)) === 0);
 
 console.log('\nstability');
 const fps = await page.evaluate(() => window.app.loop.fps);
