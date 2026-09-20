@@ -1,16 +1,15 @@
-import { VIEW } from './game/constants.js';
-import { Game } from './game/game.js';
+import { VIEW } from './vn/constants.js';
+import { App } from './vn/app.js';
 import { Input } from './engine/input.js';
-import { setupTouchControls } from './engine/touch-controls.js';
 import { Loop } from './engine/loop.js';
-import { buildOpening, openingOnStart, OPENING_STARTING_ABILITIES } from './game/levels/opening.js';
+import { createDemoCharacters } from './vn/content/demo-characters.js';
+import { DEMO_SCRIPT } from './vn/content/demo-script.js';
 
 // Bootstraps the canvas, wires up scaling, and starts the loop.
 //
-// The game always renders at a fixed internal resolution (VIEW) and the canvas
-// is scaled to fit the window with integer-friendly maths. That keeps pixel
-// sizes consistent everywhere instead of the world getting bigger on big
-// monitors.
+// The app always renders at a fixed internal resolution (VIEW) and the canvas
+// is scaled to fit the window with integer-friendly maths, so portraits and
+// text land in the same place on every screen size.
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -18,58 +17,50 @@ const ctx = canvas.getContext('2d', { alpha: false });
 canvas.width = VIEW.width;
 canvas.height = VIEW.height;
 
-// Crisp edges - this is a chunky pixel-ish look, so smoothing works against us.
-ctx.imageSmoothingEnabled = false;
+// Portrait/background art is illustration, not pixel art - smooth scaling
+// looks right here, unlike a chunky pixel game.
+ctx.imageSmoothingEnabled = true;
+ctx.imageSmoothingQuality = 'high';
 
 function resize() {
   const scale = Math.max(
-    1,
+    0.1,
     Math.min(window.innerWidth / VIEW.width, window.innerHeight / VIEW.height)
   );
-  // Snap to whole or half steps so tiles never land on fractional pixels.
-  const snapped = scale >= 2 ? Math.floor(scale) : Math.floor(scale * 2) / 2;
-  canvas.style.width = `${VIEW.width * snapped}px`;
-  canvas.style.height = `${VIEW.height * snapped}px`;
+  canvas.style.width = `${VIEW.width * scale}px`;
+  canvas.style.height = `${VIEW.height * scale}px`;
 }
 
 window.addEventListener('resize', resize);
 resize();
 
 const input = new Input(window);
-setupTouchControls(input);
 
 const loop = new Loop({
-  update: (dt) => game.update(dt),
-  render: () => game.render(),
+  update: (dt) => app.update(dt),
+  render: () => app.render(),
 });
 
-const game = new Game(ctx, input, loop, {
-  levelFactory: buildOpening,
-  startingAbilities: OPENING_STARTING_ABILITIES,
-  onStart: openingOnStart,
-  title: '焦土台灣',
-  subtitle: '第一章：甦醒',
-  titleHints: [
-    'MOVE      A D  /  arrows',
-    'JUMP      SPACE  /  K',
-    'TALK      E          (approach a person)',
-    '',
-    '（射擊與衝刺，將在劇情中逐步解鎖）',
-  ],
+const app = new App(ctx, input, loop, {
+  title: '想問就問',
+  subtitle: '轉學第一天，學姊來打招呼',
+  script: DEMO_SCRIPT,
+  charactersFactory: createDemoCharacters,
 });
 
-// Audio contexts must be created inside a user gesture; the title screen also
-// unlocks on its own, this covers clicking the canvas directly.
-const unlock = () => game.audio.unlock();
-window.addEventListener('pointerdown', unlock, { once: true });
-window.addEventListener('keydown', unlock, { once: true });
-
-// Pausing on tab blur avoids the player returning to a corpse because enemies
-// kept moving. The fixed-step loop already clamps huge deltas, but this is the
-// behaviour a player expects.
-window.addEventListener('blur', () => game.pauseIfPlaying());
+// A tap/click anywhere on the canvas advances dialogue or picks whatever
+// choice/button is under it - the Pointer Events API unifies mouse, touch
+// and pen, so this one listener covers every input device without a
+// separate on-screen button overlay.
+canvas.addEventListener('pointerdown', (e) => {
+  app.audio.unlock();
+  const rect = canvas.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * VIEW.width;
+  const y = ((e.clientY - rect.top) / rect.height) * VIEW.height;
+  app.pointerTap(x, y);
+});
 
 loop.start();
 
-// Handy for poking at tuning values from the devtools console.
-window.game = game;
+// Handy for poking at state from the devtools console.
+window.app = app;

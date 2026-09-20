@@ -1,16 +1,15 @@
 {
-  "name": "hollow-runner",
+  "name": "ask-and-practice",
   "version": "1.0.0",
-  "description": "A 2D action shooter with fluid platforming and scrolling levels, built on HTML5 Canvas with no runtime dependencies.",
+  "description": "A visual-novel style dialogue practice engine for students - animated layered portraits, paper-doll costume/expression changes, and branching practice scripts - built on HTML5 Canvas with no runtime dependencies.",
   "type": "module",
   "private": true,
   "scripts": {
     "start": "node serve.js",
     "test": "for f in test/*.test.mjs; do node \"$f\" || exit 1; done",
-    "art": "node tools/make-spritesheet.mjs",
     "test:browser": "node test/smoke.browser.mjs"
   },
-  "keywords": ["game", "platformer", "canvas", "2d", "shooter"],
+  "keywords": ["game", "visual-novel", "dialogue", "education", "canvas"],
   "license": "MIT",
   "devDependencies": {
     "playwright": "^1.62.1"

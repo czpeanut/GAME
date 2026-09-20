@@ -25,6 +25,12 @@ export class Scene {
   update(dt, input) {}
   render(ctx) {}
 
+  // Called with canvas-space coordinates when the player taps/clicks the
+  // screen. A no-op by default; scenes that care about a tap position (e.g.
+  // picking a dialogue choice by clicking it) override this instead of the
+  // app needing to know which scene is on top.
+  pointerTap(x, y) {}
+
   // If false, the stack stops walking downward during update() once it
   // reaches this scene - scenes below never see a frame. Every current scene
   // leaves this true, because the world scene self-regulates (via its own

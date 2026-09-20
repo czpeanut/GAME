@@ -91,72 +91,41 @@ export class Audio {
     src.stop(t + dur + 0.02);
   }
 
-  shoot() {
-    this.tone({ freq: 880, endFreq: 220, type: 'square', dur: 0.09, gain: 0.14 });
-    this.noise({ dur: 0.07, gain: 0.09, freq: 3000, endFreq: 600 });
-    // A low thump under the crack sells a firearm as something with real
-    // stopping power - deliberately absent from swing(), which should sound
-    // small and human by comparison.
-    this.tone({ freq: 120, endFreq: 45, type: 'sine', dur: 0.12, gain: 0.22 });
+  // A soft UI blip - advancing a line, opening a menu.
+  click() {
+    this.tone({ freq: 520, endFreq: 680, type: 'triangle', dur: 0.05, gain: 0.14 });
   }
 
-  // A melee swing - a quick, unglamorous whoosh. No low end, no crack: this
-  // is a stick or a knife, not a weapon that should ever sound as
-  // consequential as the pistol.
-  swing() {
-    this.noise({ dur: 0.09, gain: 0.14, freq: 1400, endFreq: 500, type: 'bandpass', q: 1.2 });
+  // Moving the highlighted choice up/down.
+  select() {
+    this.tone({ freq: 700, type: 'triangle', dur: 0.04, gain: 0.1 });
   }
 
-  jump() {
-    this.tone({ freq: 320, endFreq: 620, type: 'triangle', dur: 0.13, gain: 0.18 });
+  // A choice was locked in.
+  confirm() {
+    this.tone({ freq: 440, endFreq: 880, type: 'triangle', dur: 0.1, gain: 0.16 });
   }
 
-  doubleJump() {
-    this.tone({ freq: 480, endFreq: 880, type: 'triangle', dur: 0.14, gain: 0.16 });
-  }
-
-  dash() {
-    this.noise({ dur: 0.22, gain: 0.2, freq: 400, endFreq: 2600, type: 'bandpass', q: 2 });
-    this.tone({ freq: 180, endFreq: 90, type: 'sawtooth', dur: 0.18, gain: 0.1 });
-  }
-
-  land() {
-    this.noise({ dur: 0.1, gain: 0.14, freq: 700, endFreq: 160 });
-  }
-
-  hitEnemy() {
-    this.tone({ freq: 260, endFreq: 130, type: 'square', dur: 0.07, gain: 0.12 });
-    this.noise({ dur: 0.08, gain: 0.12, freq: 2200, endFreq: 400 });
-  }
-
-  enemyDie() {
-    this.noise({ dur: 0.32, gain: 0.22, freq: 1800, endFreq: 120 });
-    this.tone({ freq: 220, endFreq: 60, type: 'sawtooth', dur: 0.3, gain: 0.14 });
-  }
-
-  playerHurt() {
-    this.tone({ freq: 200, endFreq: 70, type: 'sawtooth', dur: 0.35, gain: 0.26 });
-    this.noise({ dur: 0.25, gain: 0.16, freq: 900, endFreq: 120 });
-  }
-
-  playerDie() {
-    this.tone({ freq: 320, endFreq: 40, type: 'sawtooth', dur: 0.9, gain: 0.3 });
-    this.noise({ dur: 0.8, gain: 0.2, freq: 1400, endFreq: 60 });
-  }
-
-  checkpoint() {
-    [523, 659, 784].forEach((f, i) =>
-      this.tone({ freq: f, type: 'triangle', dur: 0.28, gain: 0.16, delay: i * 0.08 })
+  // Positive feedback - a correct answer, a flag/points gained. A short
+  // rising two-note chime reads as encouragement without being distracting
+  // enough to repeat dozens of times per practice session.
+  correct() {
+    [660, 880].forEach((f, i) =>
+      this.tone({ freq: f, type: 'triangle', dur: 0.16, gain: 0.18, delay: i * 0.08 })
     );
   }
 
-  pickup() {
-    this.tone({ freq: 880, endFreq: 1320, type: 'triangle', dur: 0.16, gain: 0.16 });
+  // Gentle, non-punishing feedback for a wrong answer - a soft dip rather
+  // than a harsh buzzer, since the point is to invite another attempt, not
+  // to embarrass a student for asking.
+  incorrect() {
+    this.tone({ freq: 300, endFreq: 200, type: 'sine', dur: 0.22, gain: 0.14 });
   }
 
-  win() {
+  // A chapter or practice set finishing.
+  complete() {
     [523, 659, 784, 1046].forEach((f, i) =>
-      this.tone({ freq: f, type: 'triangle', dur: 0.4, gain: 0.18, delay: i * 0.12 })
+      this.tone({ freq: f, type: 'triangle', dur: 0.32, gain: 0.16, delay: i * 0.1 })
     );
   }
 }
