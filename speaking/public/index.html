@@ -13,16 +13,6 @@
 <body>
   <div class="app-shell">
     <aside class="sidebar-history">
-      <div class="brand">
-        <div class="brand-mark blueprint">
-          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>AI
-        </div>
-        <div>
-          <div class="brand-title">學姊問答</div>
-          <div class="brand-sub">有問題就問學姊</div>
-        </div>
-      </div>
-
       <button type="button" id="newChatBtn" class="btn btn-primary btn-block blueprint">
         <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>＋ 開始新對話
       </button>
@@ -61,7 +51,12 @@
       </div>
       <span class="tag tag-outline" id="statusTag">啟動中</span>
 
-      <div class="avatar-controls">
+      <!-- Set once and then left alone, so they stay out of the way until
+           asked for. The defaults are what a student should get without
+           touching anything. -->
+      <button type="button" class="settings-toggle" id="settingsBtn"
+              aria-expanded="false" aria-controls="avatarControls">設定</button>
+      <div class="avatar-controls" id="avatarControls" hidden>
         <label for="rateRange">語速<span class="control-val" id="rateVal">1.0</span></label>
         <input type="range" id="rateRange" min="0.5" max="2" step="0.1" value="1" />
         <label for="volumeRange">音量<span class="control-val" id="volumeVal">1.0</span></label>

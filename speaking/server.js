@@ -67,7 +67,7 @@ const GEMINI_TTS_VOICE = VOICE_NAMES.has(process.env.GEMINI_TTS_VOICE)
   : "Leda";
 const GEMINI_TTS_TONE = TONE_IDS.has(process.env.GEMINI_TTS_TONE)
   ? process.env.GEMINI_TTS_TONE
-  : "default";
+  : "lively";
 
 // Overridable so the tests can point the whole thing at a fake Gemini and
 // exercise the real request/response handling without a key.

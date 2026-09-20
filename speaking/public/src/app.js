@@ -28,6 +28,8 @@ const volumeVal = document.getElementById("volumeVal");
 const voiceSelect = document.getElementById("voiceSelect");
 const toneSelect = document.getElementById("toneSelect");
 const previewBtn = document.getElementById("previewBtn");
+const settingsBtn = document.getElementById("settingsBtn");
+const avatarControls = document.getElementById("avatarControls");
 const hint = document.getElementById("hint");
 
 const puppet = new SpeakingPuppet(avatarCanvas);
@@ -297,6 +299,12 @@ async function previewVoice() {
 }
 
 previewBtn.addEventListener("click", previewVoice);
+
+settingsBtn.addEventListener("click", () => {
+  const open = avatarControls.hidden;
+  avatarControls.hidden = !open;
+  settingsBtn.setAttribute("aria-expanded", String(open));
+});
 
 function stopSpeaking() {
   speech.stop();

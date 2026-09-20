@@ -339,6 +339,24 @@ console.log('\npicking a voice and a tone');
     listed.voices.every((v) => v.name && v.style));
   check('and it says which one this deployment defaults to', typeof listed.voice === 'string' && listed.voice,
     listed.voice);
+  check('which is the youthful one', listed.voice === 'Leda', listed.voice);
+  check('and the lively tone', listed.tone === 'lively', listed.tone);
+
+  // What a student who never opens the settings gets: no voice or tone in the
+  // request at all, and the server filling both in.
+  const bare = fake.calls.ttsTexts.length;
+  await page.request.get(`${BASE}api/tts?text=${encodeURIComponent('一句話')}`);
+  check('asking with no preferences still gets the lively direction',
+    (fake.calls.ttsTexts[bare] || '').startsWith('請用活潑開朗、充滿精神的語氣說：'),
+    fake.calls.ttsTexts[bare]);
+  check('and the default voice', fake.calls.ttsVoices[bare] === 'Leda',
+    String(fake.calls.ttsVoices[bare]));
+
+  check('the controls are out of the way until asked for',
+    await page.locator('#avatarControls').isHidden());
+  await page.click('#settingsBtn');
+  check('and the settings button brings them up',
+    await page.locator('#avatarControls').isVisible());
 
   const options = await page.evaluate(() => ({
     voices: [...document.getElementById('voiceSelect').options].length,

@@ -86,7 +86,7 @@ npm run test:browser   # 端對端：起真的 server、開 Chromium，串流和
 | `GEMINI_TTS_MODEL` | `gemini-2.5-flash-preview-tts` | 退回時用的語音合成模型（一次回傳） |
 | `GEMINI_TTS_STREAM_MODEL` | `gemini-3.1-flash-tts-preview` | 可串流的語音模型；設成空字串會強制走上面那個 |
 | `GEMINI_TTS_VOICE` | `Leda` | 預設聲線。Google 的文件只給每個聲線一個風格字（Leda 是 *Youthful*、Zephyr 是 *Bright*、Sadachbia 是 *Lively*⋯⋯），**沒有標性別，也沒有標年齡**——所以這件事只能用耳朵決定，不能從清單上讀出來。頁面上有試聽的選單（見下），選定之後把結果寫回這個變數就會變成新的預設 |
-| `GEMINI_TTS_TONE` | `default` | 預設語氣：`default` / `lively`（活潑）/ `gentle`（溫柔）/ `calm`（沉穩）。這些不是 API 參數，是加在文字前面的一句中文指示 |
+| `GEMINI_TTS_TONE` | `lively` | 預設語氣：`lively`（活潑）/ `gentle`（溫柔）/ `calm`（沉穩）/ `default`（不加指示）。這些不是 API 參數，是加在文字前面的一句中文指示 |
 
 ## 速解法：老師先寫好的標準做法
 
