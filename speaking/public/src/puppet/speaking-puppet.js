@@ -172,7 +172,13 @@ export class SpeakingPuppet {
     // mouth advances at a steady rate whatever the frame rate is doing.
     const mouthIndex = this.mouthIndex;
     const box = this._layout();
-    this.renderer.draw(ctx, this.character, this.rig, { blinking: this.motion.blinking, mouthIndex }, box);
+    // eyeVariant, not just `blinking`: the artist drew a half-lidded eye, and
+    // without it the blink jumps straight from open to shut and back.
+    this.renderer.draw(ctx, this.character, this.rig, {
+      blinking: this.motion.blinking,
+      eyeVariant: this.motion.eyeVariant,
+      mouthIndex,
+    }, box);
   }
 }
 

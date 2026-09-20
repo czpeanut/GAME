@@ -8,10 +8,22 @@
 
 import { createServer } from 'node:http';
 
-// A speech-shaped clip: bursts of tone with silence between them, so the mouth
-// has something to follow and something to close on.
+// A speech-shaped clip: bursts of tone with near-silence between them, so the
+// mouth has something to follow and something to close on.
+//
+// The timing matters. Mandarin runs 5-6 syllables a second - about 110ms of
+// voicing and then a 70ms gap - and a mouth that cannot shut inside that gap
+// hangs open across a whole phrase. The clip used to be 400ms bursts with
+// 200ms of silence, which any mouth can follow and which therefore proved
+// nothing. The amplitudes vary so the wide-open shape has to be earned.
+const SPEECH_PATTERN = [[0.09, 0.001]];
+[0.6, 0.85, 0.35, 0.75, 0.3, 0.7].forEach((amplitude) => {
+  SPEECH_PATTERN.push([0.11, amplitude], [0.07, 0.006]);
+});
+SPEECH_PATTERN.push([0.2, 0.001]);
+
 export function speechPcm({ rate = 24000, pattern } = {}) {
-  const shape = pattern ?? [[0.4, 0.6], [0.2, 0], [0.4, 0.6], [0.25, 0]];
+  const shape = pattern ?? SPEECH_PATTERN;
   const frames = Math.round(shape.reduce((sum, [s]) => sum + s, 0) * rate);
   const pcm = Buffer.alloc(frames * 2);
   let at = 0;

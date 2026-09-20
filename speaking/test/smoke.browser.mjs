@@ -181,6 +181,21 @@ console.log('\nspeaking a clause at a time');
     `${firstText.length} chars: ${firstText}`);
   check('the clause is a prefix of the answer', ANSWER.startsWith(firstText), firstText);
 
+  // Sample the mouth every frame from inside the page. Polling from out here
+  // tops out around 25 samples a second, which cannot resolve the 70ms gap
+  // between two syllables - and whether the mouth shuts in that gap is the
+  // whole question.
+  await page.evaluate(() => {
+    window.__mouthTrace = [];
+    const audible = () => [document.getElementById('avatarAudio'), document.getElementById('avatarAudioNext')]
+      .some((el) => el && !el.paused && !el.ended);
+    const tick = () => {
+      window.__mouthTrace.push([performance.now(), window.puppet.mouthIndex, audible() ? 1 : 0]);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+
   const track = [];
   const started = Date.now();
   while (Date.now() - started < 6000) {
@@ -200,6 +215,35 @@ console.log('\nspeaking a clause at a time');
     `shapes seen: ${[...shapes].sort().join(',')}`);
   check('it reaches wide open', shapes.has(2));
   check('and closes again between syllables', shapes.has(0));
+
+  // The end-to-end measurement: real audio, real analyser, real canvas. The
+  // fake clip is syllable-timed (see fake-gemini.mjs), so a mouth that is
+  // following it spends well under all of the speech open, and shuts several
+  // times a second. Before the mouth track learned to close inside a phrase it
+  // was open for ~98% of the audio and shut about once a second.
+  const trace = await page.evaluate(() => window.__mouthTrace);
+  const speaking = trace.filter(([, , playing]) => playing);
+  const openFrames = speaking.filter(([, mouth]) => mouth > 0).length;
+  const openRatio = speaking.length ? openFrames / speaking.length : 1;
+  const span = speaking.length > 1 ? (speaking[speaking.length - 1][0] - speaking[0][0]) / 1000 : 0;
+  let closures = 0;
+  speaking.forEach(([, mouth], i) => {
+    if (i > 0 && mouth === 0 && speaking[i - 1][1] > 0) closures++;
+  });
+  check('the trace has enough frames to say anything', speaking.length > 60 && span > 1,
+    `${speaking.length} frames over ${span.toFixed(1)}s`);
+  check('the mouth is not simply hanging open through the speech', openRatio < 0.85,
+    `open ${(openRatio * 100).toFixed(0)}% of the speaking frames`);
+  check('nor mostly shut', openRatio > 0.3, `open ${(openRatio * 100).toFixed(0)}%`);
+  // At 5-6 syllables a second the mouth should shut for most of the gaps
+  // between them. Many more closures than there are syllables would be a
+  // strobing mouth, which stops reading as speech altogether.
+  check('it shuts several times a second, in the gaps between syllables',
+    span > 0 && closures / span >= 3, `${(closures / span).toFixed(1)} closures/s`);
+  check('but not more often than anyone could be speaking',
+    span > 0 && closures / span <= 12, `${(closures / span).toFixed(1)} closures/s`);
+  check('and it uses the half-open shape, not just open and shut',
+    speaking.some(([, mouth]) => mouth === 1));
   check('the mouth is shut whenever nothing is playing',
     track.filter((s) => !s.playing).every((s) => s.mouth === 0));
 
