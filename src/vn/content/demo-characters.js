@@ -93,14 +93,8 @@ const HERO_RIG = buildRig({
 //     character in a dress that is most of the life
 //   - the raised arm is its own layer, and the body behind it is complete
 //   - the waist ties are their own layer, so they can whip
-//   - the irises are separate from the face, so the eyes could look around
-//
-// What it does not buy, because the art is not there:
-//   - no blinking: there is no closed-eye drawing, and hiding the irises on
-//     their own would read as her eyes rolling back, not as a blink
-//   - no mouth movement: the mouth is painted into the face layer, so there
-//     is no `mouth` part for the talk timer to drive
-// Both are one small layer away - see the README.
+//   - the eyes and the mouth are their own layers over a face that has
+//     neither drawn on it, so she can blink and talk
 //
 // Joints measured off the assembled figure (fractions of the part canvas,
 // x from the left, y from the TOP). She stands slightly left of centre in
