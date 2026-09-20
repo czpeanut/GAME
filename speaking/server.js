@@ -6,11 +6,67 @@ const PORT = process.env.PORT || 3000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 const GEMINI_TTS_MODEL = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
-// Leda: one of Gemini's female voices, described as youthful and energetic,
-// which is the character speaking here. Google's own docs do not label the
-// voices by gender - Kore, Aoede, Zephyr and Leda are the female ones - so if
-// this is not the right read, swapping it is one environment variable.
-const GEMINI_TTS_VOICE = process.env.GEMINI_TTS_VOICE || "Leda";
+// Gemini's prebuilt voices, each with the one-word style Google's own docs give
+// it. Two things the docs do NOT say: which voices are female, and how old any
+// of them sounds. Nobody can settle that from the code - it needs an ear and a
+// key - so the point of keeping the list here is that /api/voices can hand it
+// to the page and the choice can be made by listening. `pick` flags the ones
+// whose documented style is young or lively, which is where to start, not an
+// answer.
+const VOICES = [
+  { name: "Leda", style: "Youthful", pick: true },
+  { name: "Zephyr", style: "Bright", pick: true },
+  { name: "Autonoe", style: "Bright", pick: true },
+  { name: "Laomedeia", style: "Upbeat", pick: true },
+  { name: "Sadachbia", style: "Lively", pick: true },
+  { name: "Aoede", style: "Breezy", pick: true },
+  { name: "Achird", style: "Friendly", pick: true },
+  { name: "Zubenelgenubi", style: "Casual", pick: true },
+  { name: "Puck", style: "Upbeat" },
+  { name: "Fenrir", style: "Excitable" },
+  { name: "Kore", style: "Firm" },
+  { name: "Orus", style: "Firm" },
+  { name: "Alnilam", style: "Firm" },
+  { name: "Callirrhoe", style: "Easy-going" },
+  { name: "Umbriel", style: "Easy-going" },
+  { name: "Despina", style: "Smooth" },
+  { name: "Algieba", style: "Smooth" },
+  { name: "Erinome", style: "Clear" },
+  { name: "Iapetus", style: "Clear" },
+  { name: "Vindemiatrix", style: "Gentle" },
+  { name: "Achernar", style: "Soft" },
+  { name: "Sulafat", style: "Warm" },
+  { name: "Enceladus", style: "Breathy" },
+  { name: "Schedar", style: "Even" },
+  { name: "Pulcherrima", style: "Forward" },
+  { name: "Charon", style: "Informative" },
+  { name: "Rasalgethi", style: "Informative" },
+  { name: "Sadaltager", style: "Knowledgeable" },
+  { name: "Algenubi", style: "Gravelly" },
+  { name: "Gacrux", style: "Mature" },
+];
+const VOICE_NAMES = new Set(VOICES.map((voice) => voice.name));
+
+// The voice name is only half of how old or lively she sounds. These models
+// take direction in plain language - the same lever the pace already uses - and
+// the delivery changes a lot more than picking a different voice does.
+const TONES = [
+  { id: "default", label: "預設", style: "" },
+  { id: "lively", label: "活潑", style: "活潑開朗、充滿精神" },
+  { id: "gentle", label: "溫柔", style: "溫柔親切、放鬆" },
+  { id: "calm", label: "沉穩", style: "沉穩清楚" },
+];
+const TONE_IDS = new Set(TONES.map((tone) => tone.id));
+
+// The default is what every request gets when the page does not ask for
+// something else - so changing these two needs no code, and no redeploy if they
+// are set as environment variables.
+const GEMINI_TTS_VOICE = VOICE_NAMES.has(process.env.GEMINI_TTS_VOICE)
+  ? process.env.GEMINI_TTS_VOICE
+  : "Leda";
+const GEMINI_TTS_TONE = TONE_IDS.has(process.env.GEMINI_TTS_TONE)
+  ? process.env.GEMINI_TTS_TONE
+  : "default";
 
 // Overridable so the tests can point the whole thing at a fake Gemini and
 // exercise the real request/response handling without a key.
@@ -73,13 +129,16 @@ function sanitizeForSpeech(text) {
     .trim();
 }
 
-// Gemini's TTS models have no rate parameter; they take direction in plain
-// language instead, which measurably changes the delivery (the same sentence
-// runs ~12s "slow" / ~7s default / ~5s "fast").
-function withPaceDirection(text, rate) {
-  if (rate <= 0.85) return `請用較慢的語速說：${text}`;
-  if (rate >= 1.15) return `請用較快的語速說：${text}`;
-  return text;
+// Gemini's TTS models have no rate parameter, and no tone parameter either;
+// they take direction in plain language, which measurably changes the delivery
+// (the same sentence runs ~12s "slow" / ~7s default / ~5s "fast"). Both
+// directions go in one prefix, because two sentences of instruction in front of
+// a short clause is more instruction than clause.
+function withDirections(text, { rate = 1, tone = GEMINI_TTS_TONE } = {}) {
+  const style = TONES.find((entry) => entry.id === tone)?.style || "";
+  const pace = rate <= 0.85 ? "較慢的語速" : rate >= 1.15 ? "較快的語速" : "";
+  const how = [style && `${style}的語氣`, pace].filter(Boolean).join("、");
+  return how ? `請用${how}說：${text}` : text;
 }
 
 function wavHeader(dataLength, sampleRate, channels = 1, bitsPerSample = 16) {
@@ -146,7 +205,7 @@ async function* audioChunks(response) {
 // first byte is written returns false instead, so the caller can still fall
 // back - which matters because the streaming model is a preview and may simply
 // not be available on a given key.
-async function streamSpeech(res, text, rate) {
+async function streamSpeech(res, text, options) {
   if (!GEMINI_TTS_STREAM_MODEL) return false;
 
   const started = Date.now();
@@ -157,9 +216,9 @@ async function streamSpeech(res, text, rate) {
       headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: GEMINI_TTS_STREAM_MODEL,
-        input: withPaceDirection(text, rate),
+        input: withDirections(text, options),
         response_format: { type: "audio" },
-        generation_config: { speech_config: [{ voice: GEMINI_TTS_VOICE }] },
+        generation_config: { speech_config: [{ voice: options.voice }] },
         stream: true,
       }),
     });
@@ -206,16 +265,16 @@ async function streamSpeech(res, text, rate) {
 }
 
 // The original path: ask for the whole clip and send it on in one piece.
-async function bufferedSpeech(res, text, rate) {
+async function bufferedSpeech(res, text, options) {
   const started = Date.now();
   const ttsRes = await fetch(`${GEMINI_BASE}/${GEMINI_TTS_MODEL}:generateContent`, {
     method: "POST",
     headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: withPaceDirection(text, rate) }] }],
+      contents: [{ parts: [{ text: withDirections(text, options) }] }],
       generationConfig: {
         responseModalities: ["AUDIO"],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: GEMINI_TTS_VOICE } } },
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: options.voice } } },
       },
     }),
   });
@@ -250,7 +309,7 @@ app.get("/api/tts", async (req, res) => {
     return res.status(500).json({ error: "尚未設定 GEMINI_API_KEY，請在環境變數加入後重新啟動伺服器。" });
   }
 
-  const { text, rate } = req.query || {};
+  const { text, rate, voice, tone } = req.query || {};
   if (typeof text !== "string" || !text.trim()) {
     return res.status(400).json({ error: "請提供要朗讀的文字" });
   }
@@ -258,11 +317,24 @@ app.get("/api/tts", async (req, res) => {
     return res.status(400).json({ error: "文字長度過長（上限 2000 字）" });
   }
 
-  const rateVal = Number.isFinite(Number(rate)) ? Number(rate) : 1;
+  // Both of these end up inside a request to Gemini, so neither is taken on
+  // trust: an unknown name is rejected here rather than forwarded.
+  if (voice !== undefined && !VOICE_NAMES.has(voice)) {
+    return res.status(400).json({ error: `不認識的聲線：${String(voice).slice(0, 40)}` });
+  }
+  if (tone !== undefined && !TONE_IDS.has(tone)) {
+    return res.status(400).json({ error: `不認識的語氣：${String(tone).slice(0, 40)}` });
+  }
+
+  const options = {
+    rate: Number.isFinite(Number(rate)) ? Number(rate) : 1,
+    voice: voice || GEMINI_TTS_VOICE,
+    tone: tone || GEMINI_TTS_TONE,
+  };
 
   try {
-    if (await streamSpeech(res, text, rateVal)) return;
-    await bufferedSpeech(res, text, rateVal);
+    if (await streamSpeech(res, text, options)) return;
+    await bufferedSpeech(res, text, options);
   } catch (err) {
     console.error("連線語音合成服務失敗:", err);
     if (!res.headersSent) {
@@ -275,6 +347,13 @@ app.get("/api/tts", async (req, res) => {
 
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, gemini: Boolean(GEMINI_API_KEY) });
+});
+
+// The page builds its picker from this, so the list lives in one place. It also
+// reports what the deployment currently defaults to, which is the one thing you
+// cannot see from the outside.
+app.get("/api/voices", (_req, res) => {
+  res.json({ voices: VOICES, tones: TONES, voice: GEMINI_TTS_VOICE, tone: GEMINI_TTS_TONE });
 });
 
 app.post("/api/ask", async (req, res) => {

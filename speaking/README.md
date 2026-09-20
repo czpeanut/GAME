@@ -9,7 +9,7 @@
 ## 技術架構
 
 - **問答**：[Gemini API](https://ai.google.dev) 產生答案。系統指令要求它用簡短口語回答、不要 Markdown 或 LaTeX，因為答案會被直接唸出來；後端另有一層清洗當保險。
-- **語音**：Gemini 的 TTS 模型（女聲 `Leda`）。**回答會先拆成句子，一句一句合成**，第一句拿到就開始講，後面的在播放中途先要好。可以串流的模型（3.1 以後）還會邊生成邊送，瀏覽器邊收邊播。
+- **語音**：Gemini 的 TTS 模型（預設聲線 `Leda`，Google 文件標為 *Youthful*；頁面上可以試聽換掉）。**回答會先拆成句子，一句一句合成**，第一句拿到就開始講，後面的在播放中途先要好。可以串流的模型（3.1 以後）還會邊生成邊送，瀏覽器邊收邊播。
 - **畫面**：Canvas 上的**剛體切塊人偶**——十層真正的分層素材（長髮、裙子、舉起的手、瀏海、眼睛、嘴型⋯⋯），各自有關節和彈簧，會呼吸、微傾、眨眼、頭髮和裙子延遲擺動，背後是同一張教室背景。沒有任何第三方服務、沒有 WebRTC、沒有授權費。
 - **嘴型**：即時量音量（每 20ms 一格）決定嘴巴閉合／半開／張開。不是隨機開合，是跟著真的在說什麼走；因為是即時的，所以音訊還在傳的時候嘴巴就能動。關鍵不在「張開得夠不夠快」，而在**閉得夠不夠快**——句子裡兩個字之間只有約 70ms 的空檔，嘴巴要來得及在那裡閉上，否則整句話看起來就是一直開著在拍。細節見 `public/src/puppet/lipsync.js`。
 - **後端**：Node.js + Express，只做兩件事：呼叫 Gemini 取得答案、呼叫 Gemini TTS 取得語音（金鑰全部留在伺服器端）。
@@ -84,7 +84,19 @@ npm run test:browser   # 端對端：起真的 server、開 Chromium，串流和
 | `GEMINI_MODEL` | `gemini-3.6-flash` | 回答問題用的模型 |
 | `GEMINI_TTS_MODEL` | `gemini-2.5-flash-preview-tts` | 退回時用的語音合成模型（一次回傳） |
 | `GEMINI_TTS_STREAM_MODEL` | `gemini-3.1-flash-tts-preview` | 可串流的語音模型；設成空字串會強制走上面那個 |
-| `GEMINI_TTS_VOICE` | `Leda` | 語音角色。Google 文件沒有標註性別，實測 **Kore / Aoede / Zephyr / Leda 是女聲**，Puck / Charon / Fenrir / Orus 是男聲。覺得不對就換一個，這是一個環境變數的事 |
+| `GEMINI_TTS_VOICE` | `Leda` | 預設聲線。Google 的文件只給每個聲線一個風格字（Leda 是 *Youthful*、Zephyr 是 *Bright*、Sadachbia 是 *Lively*⋯⋯），**沒有標性別，也沒有標年齡**——所以這件事只能用耳朵決定，不能從清單上讀出來。頁面上有試聽的選單（見下），選定之後把結果寫回這個變數就會變成新的預設 |
+| `GEMINI_TTS_TONE` | `default` | 預設語氣：`default` / `lively`（活潑）/ `gentle`（溫柔）/ `calm`（沉穩）。這些不是 API 參數，是加在文字前面的一句中文指示 |
+
+## 聲線怎麼挑
+
+Gemini 有 30 個內建聲線，文件只給每個一個風格字，**沒有標性別也沒有標年齡**。這種東西不可能靠讀清單決定，所以人偶旁邊的控制列有兩個選單和一顆「試聽這個聲音」：
+
+- **聲線**：30 個都在裡面，`★` 標的是文件上寫著年輕／明亮／活潑的那幾個（Leda *Youthful*、Zephyr *Bright*、Autonoe *Bright*、Laomedeia *Upbeat*、Sadachbia *Lively*、Aoede *Breezy*、Achird *Friendly*、Zubenelgenubi *Casual*）——那是「從哪裡開始聽」，不是答案。
+- **語氣**：活潑／溫柔／沉穩。這一個往往比換聲線有感，因為它改的是講法而不是音色。跟語速一樣，是加在文字前面的一句中文指示（`請用活潑開朗、充滿精神的語氣說：⋯⋯`），模型會照著演而不是把它唸出來。
+
+試聽只合成一句話，不會動到問答額度。選定之後把 `GEMINI_TTS_VOICE` 和 `GEMINI_TTS_TONE` 設成那一組，新的訪客一進來就是那個聲音。
+
+清單來自 `server.js` 的 `VOICES`，經 `GET /api/voices` 給頁面，所以只有一份。`/api/tts?voice=&tone=` 只接受清單裡的值，不認識的直接 400——這兩個參數會進到送去 Gemini 的請求裡，不能照收。
 
 ## 延遲是怎麼壓下來的
 

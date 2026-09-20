@@ -98,13 +98,19 @@ export class SpeechQueue {
 
   // Resolves when the whole answer has been spoken. Throws if a clause could
   // not be fetched, with the server's own message where there is one.
-  async speak(text, { rate = 1 } = {}) {
+  async speak(text, { rate = 1, voice = "", tone = "" } = {}) {
     const pieces = splitSentences(text);
     if (!pieces.length) return;
 
     const generation = ++this.generation;
-    const url = (piece) =>
-      `/api/tts?${new URLSearchParams({ text: piece, rate: String(rate) })}`;
+    const url = (piece) => {
+      const params = new URLSearchParams({ text: piece, rate: String(rate) });
+      // Left out rather than sent empty, so the server's own default applies
+      // and a deployment that has one set keeps it.
+      if (voice) params.set("voice", voice);
+      if (tone) params.set("tone", tone);
+      return `/api/tts?${params}`;
+    };
 
     // Get the first clause moving before anything else happens.
     this.elements[0].src = url(pieces[0]);

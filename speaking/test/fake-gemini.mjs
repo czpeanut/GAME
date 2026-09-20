@@ -38,7 +38,7 @@ export function speechPcm({ rate = 24000, pattern } = {}) {
 }
 
 export function startFakeGemini({ chunks = 6, chunkDelayMs = 30, answer = '' } = {}) {
-  const calls = { interactions: 0, generateContent: 0, ttsTexts: [] };
+  const calls = { interactions: 0, generateContent: 0, ttsTexts: [], ttsVoices: [] };
 
   const server = createServer(async (req, res) => {
     let body = '';
@@ -48,6 +48,7 @@ export function startFakeGemini({ chunks = 6, chunkDelayMs = 30, answer = '' } =
     if (req.url.startsWith('/v1beta/interactions')) {
       calls.interactions++;
       calls.ttsTexts.push(parsed.input);
+      calls.ttsVoices.push(parsed.generation_config?.speech_config?.[0]?.voice);
       if (process.env.FAKE_GEMINI_NO_STREAM === '1') {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: { message: 'model not available' } }));
@@ -74,6 +75,8 @@ export function startFakeGemini({ chunks = 6, chunkDelayMs = 30, answer = '' } =
       calls.generateContent++;
       if (req.url.includes('tts')) {
         calls.ttsTexts.push(parsed.contents?.[0]?.parts?.[0]?.text);
+        calls.ttsVoices.push(
+          parsed.generationConfig?.speechConfig?.voiceConfig?.prebuiltVoiceConfig?.voiceName);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           candidates: [{

@@ -270,6 +270,56 @@ console.log('\nwhich synthesis path the server used');
     `${body.length} bytes`);
 }
 
+console.log('\npicking a voice and a tone');
+{
+  const listed = await (await page.request.get(`${BASE}api/voices`)).json();
+  check('the server publishes its voice list', Array.isArray(listed.voices) && listed.voices.length > 10,
+    `${listed.voices?.length} voices`);
+  check('every entry has a name and a style',
+    listed.voices.every((v) => v.name && v.style));
+  check('and it says which one this deployment defaults to', typeof listed.voice === 'string' && listed.voice,
+    listed.voice);
+
+  const options = await page.evaluate(() => ({
+    voices: [...document.getElementById('voiceSelect').options].length,
+    tones: [...document.getElementById('toneSelect').options].map((o) => o.value),
+    selected: document.getElementById('voiceSelect').value,
+  }));
+  check('the page built the picker from it', options.voices === listed.voices.length,
+    `${options.voices} options`);
+  check('starting on the deployment default', options.selected === listed.voice, options.selected);
+  check('and the tone presets are there', options.tones.includes('lively'), options.tones.join(','));
+
+  // Choose a voice and a tone that are not the defaults, press 試聽, and check
+  // that both reach Gemini - the voice as the voice, the tone as a direction in
+  // front of the line.
+  const before = fake.calls.ttsTexts.length;
+  await page.selectOption('#voiceSelect', 'Sadachbia');
+  await page.selectOption('#toneSelect', 'lively');
+  await page.click('#previewBtn');
+  const deadline = Date.now() + 8000;
+  while (fake.calls.ttsTexts.length === before && Date.now() < deadline) {
+    await page.waitForTimeout(50);
+  }
+  check('the chosen voice is what Gemini is asked for',
+    fake.calls.ttsVoices[before] === 'Sadachbia', String(fake.calls.ttsVoices[before]));
+  check('the chosen tone arrives as a direction',
+    (fake.calls.ttsTexts[before] || '').startsWith('請用活潑開朗、充滿精神的語氣說：'),
+    fake.calls.ttsTexts[before]);
+  check('and the line itself is still in there',
+    (fake.calls.ttsTexts[before] || '').includes('我是學姊'), fake.calls.ttsTexts[before]);
+}
+
+console.log('\nneither is taken on trust');
+{
+  const bad = await page.request.get(`${BASE}api/tts?text=${encodeURIComponent('一句話')}&voice=Nonexistent`);
+  check('an unknown voice is refused, not forwarded', bad.status() === 400, String(bad.status()));
+  const badTone = await page.request.get(`${BASE}api/tts?text=${encodeURIComponent('一句話')}&tone=whatever`);
+  check('an unknown tone is refused too', badTone.status() === 400, String(badTone.status()));
+  const fine = await page.request.get(`${BASE}api/tts?text=${encodeURIComponent('一句話')}&voice=Kore`);
+  check('a known one still works', fine.ok(), String(fine.status()));
+}
+
 console.log('\nconsole output');
 check('no errors logged', errors.length === 0, errors.join(' | ') || 'clean');
 

@@ -25,6 +25,9 @@ const rateRange = document.getElementById("rateRange");
 const volumeRange = document.getElementById("volumeRange");
 const rateVal = document.getElementById("rateVal");
 const volumeVal = document.getElementById("volumeVal");
+const voiceSelect = document.getElementById("voiceSelect");
+const toneSelect = document.getElementById("toneSelect");
+const previewBtn = document.getElementById("previewBtn");
 const hint = document.getElementById("hint");
 
 const puppet = new SpeakingPuppet(avatarCanvas);
@@ -189,6 +192,68 @@ fetch("/api/health")
 // ---------- Audio ----------
 speech.setVolume(Number(volumeRange.value));
 
+// How the answer is spoken: which of Gemini's voices, and what to tell it about
+// the delivery. Nobody can decide either of these by reading a list - the docs
+// do not even say which voices are female - so the point of the picker is to
+// make it a few seconds of listening instead of an environment variable and a
+// redeploy.
+const PREVIEW_LINE = "你好呀！我是學姊，有什麼問題都可以問我喔。";
+
+function speechOptions() {
+  return {
+    rate: Number(rateRange.value),
+    voice: voiceSelect.value,
+    tone: toneSelect.value,
+  };
+}
+
+// Until the list arrives the selects are empty, and an empty value means "let
+// the server use its own default" - so a failed fetch costs the picker, not the
+// speech.
+fetch("/api/voices")
+  .then((res) => res.json())
+  .then(({ voices = [], tones = [], voice, tone }) => {
+    for (const entry of voices) {
+      const option = document.createElement("option");
+      option.value = entry.name;
+      // Google's one-word description of each voice is the only thing anyone
+      // has to go on before pressing play, so show it.
+      option.textContent = `${entry.pick ? "★ " : ""}${entry.name}（${entry.style}）`;
+      voiceSelect.appendChild(option);
+    }
+    if (voice) voiceSelect.value = voice;
+    for (const entry of tones) {
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = entry.label;
+      toneSelect.appendChild(option);
+    }
+    if (tone) toneSelect.value = tone;
+  })
+  .catch(() => {
+    // Leave both empty; the server's defaults still apply.
+  });
+
+async function previewVoice() {
+  // Inside the click, for the same reason submitting does it.
+  speech.unlock();
+  previewBtn.disabled = true;
+  setStatus("試聽中", "tag-accent");
+  speakingBadge.hidden = false;
+  try {
+    await speech.speak(PREVIEW_LINE, speechOptions());
+  } catch (err) {
+    addErrorRow(err.message || "試聽失敗，請再試一次。");
+  } finally {
+    speakingBadge.hidden = true;
+    puppet.stopSpeaking();
+    setStatus("待命中", "tag-accent");
+    previewBtn.disabled = false;
+  }
+}
+
+previewBtn.addEventListener("click", previewVoice);
+
 function stopSpeaking() {
   speech.stop();
   puppet.stopSpeaking();
@@ -221,7 +286,7 @@ async function askQuestion(question) {
 
     setStatus("說話中", "tag-accent");
     speakingBadge.hidden = false;
-    await speech.speak(data.answer, { rate: Number(rateRange.value) });
+    await speech.speak(data.answer, speechOptions());
     speakingBadge.hidden = true;
   } catch (err) {
     console.error(err);
