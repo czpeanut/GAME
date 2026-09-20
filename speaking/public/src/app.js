@@ -114,6 +114,50 @@ function addErrorRow(text) {
   return row;
 }
 
+// The prepared method for a topic the teacher has already written up. It is
+// SHOWN, not spoken - the speech only ever gets data.answer - because a formula
+// read aloud is unusable, and because this is the part that has to be exactly
+// right rather than paraphrased.
+function addMethodCard(method) {
+  const card = document.createElement("div");
+  card.className = "method-card";
+
+  const title = document.createElement("div");
+  title.className = "method-title";
+  title.textContent = `速解法 · ${method.title}`;
+  card.appendChild(title);
+
+  if (method.formula) {
+    const formula = document.createElement("div");
+    formula.className = "method-formula";
+    formula.textContent = method.formula;
+    card.appendChild(formula);
+  }
+
+  if (method.steps?.length) {
+    const steps = document.createElement("ol");
+    steps.className = "method-steps";
+    for (const step of method.steps) {
+      const li = document.createElement("li");
+      li.textContent = step;
+      steps.appendChild(li);
+    }
+    card.appendChild(steps);
+  }
+
+  for (const [label, text] of [["例", method.example], ["補充", method.note]]) {
+    if (!text) continue;
+    const line = document.createElement("div");
+    line.className = "method-aside";
+    line.textContent = `${label}：${text}`;
+    card.appendChild(line);
+  }
+
+  chatScroll.appendChild(card);
+  scrollToBottom();
+  return card;
+}
+
 function addHistoryEntry(question, targetRow) {
   historyEmpty.hidden = true;
   turnCount += 1;
@@ -282,6 +326,7 @@ async function askQuestion(question) {
 
     thinkingRow.remove();
     const answerRow = addChatRow("ai", data.answer);
+    for (const method of data.methods || []) addMethodCard(method);
     addHistoryEntry(question, answerRow);
 
     setStatus("說話中", "tag-accent");

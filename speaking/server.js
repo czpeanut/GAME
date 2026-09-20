@@ -1,6 +1,7 @@
 require("dotenv").config();
 const path = require("path");
 const express = require("express");
+const quickMethods = require("./lib/quick-methods");
 
 const PORT = process.env.PORT || 3000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -108,6 +109,11 @@ const SPEECH_SYSTEM_INSTRUCTION =
   "(2) 絕對不要使用 Markdown 格式，不要有 **、#、-、`、條列清單。" +
   "(3) 絕對不要使用 LaTeX 或數學符號語法，例如不要寫 $\\frac{a}{b}$，要用「a 除以 b」這種口語講法；不要寫 $x^2$，要說「x 的平方」。" +
   "(4) 不要輸出任何無法唸出來的符號。";
+
+// The topics the teacher has already written a method for. Loaded once: the
+// library is content rather than code, so editing it needs a restart but not a
+// redeploy.
+const QUICK_METHODS = quickMethods.loadLibrary();
 
 // Defensive cleanup in case the model still slips in formatting despite the
 // system instruction above — strips it rather than reading symbols aloud.
@@ -369,12 +375,24 @@ app.post("/api/ask", async (req, res) => {
     return res.status(400).json({ error: "問題長度過長（上限 2000 字）" });
   }
 
+  // Does this question hit a topic the teacher has prepared? If it does, the
+  // model is told to use that method rather than inventing one, and the formula
+  // itself goes to the page - see lib/quick-methods.js for why those are two
+  // different things.
+  const matched = quickMethods.findMethods(question, QUICK_METHODS);
+  const guidance = quickMethods.buildGuidance(matched);
+  if (matched.length) {
+    console.log(`速解法命中：${matched.map((m) => m.id).join(", ")}`);
+  }
+
   try {
     const geminiRes = await fetch(`${GEMINI_BASE}/${GEMINI_MODEL}:generateContent`, {
       method: "POST",
       headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: SPEECH_SYSTEM_INSTRUCTION }] },
+        system_instruction: {
+          parts: [{ text: guidance ? `${SPEECH_SYSTEM_INSTRUCTION}\n\n${guidance}` : SPEECH_SYSTEM_INSTRUCTION }],
+        },
         contents: [{ parts: [{ text: question }] }],
         // gemini-3.6-flash spends a variable, sometimes large, number of tokens
         // "thinking" before it writes the visible answer, and that eats into
@@ -394,7 +412,12 @@ app.post("/api/ask", async (req, res) => {
     if (!rawAnswer) {
       return res.status(502).json({ error: "沒有取得回答內容", detail: data });
     }
-    res.json({ answer: sanitizeForSpeech(rawAnswer).slice(0, 800) });
+    // `methods` is shown, never spoken: the page puts it on screen under the
+    // answer and only ever sends `answer` to the speech endpoint.
+    res.json({
+      answer: sanitizeForSpeech(rawAnswer).slice(0, 800),
+      methods: matched.map(quickMethods.toCard),
+    });
   } catch (err) {
     console.error("連線 Gemini 服務失敗:", err);
     res.status(502).json({ error: "連線問答服務失敗", detail: String(err) });
@@ -403,6 +426,7 @@ app.post("/api/ask", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Speaking-avatar server running at http://localhost:${PORT}`);
+  console.log(`已載入 ${QUICK_METHODS.length} 則速解法：${QUICK_METHODS.map((m) => m.id).join(", ") || "（無）"}`);
   if (!GEMINI_API_KEY) {
     console.warn("⚠️  尚未設定 GEMINI_API_KEY，問答與語音功能將無法使用。");
   }

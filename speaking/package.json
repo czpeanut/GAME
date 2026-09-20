@@ -9,7 +9,7 @@
     "build": "node scripts/build-client.js",
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node test/lipsync.test.mjs && node test/sentences.test.mjs",
+    "test": "node test/lipsync.test.mjs && node test/sentences.test.mjs && node test/quick-methods.test.mjs",
     "test:browser": "node test/smoke.browser.mjs && FORCE_BUFFERED=1 PORT=3124 node test/smoke.browser.mjs"
   },
   "dependencies": {

@@ -270,6 +270,66 @@ console.log('\nwhich synthesis path the server used');
     `${body.length} bytes`);
 }
 
+console.log('\na question the teacher has already written a method for');
+{
+  const before = fake.calls.systemInstructions.length;
+  const ttsBefore = ttsRequests.length;
+  await page.fill('#questionInput', 'a sin θ + b cos θ 的最大值要怎麼求？');
+  await page.click('#askBtn');
+  await page.waitForSelector('.method-card', { timeout: 20000 });
+
+  const card = await page.evaluate(() => {
+    const el = document.querySelector('.method-card');
+    return {
+      title: el.querySelector('.method-title')?.textContent || '',
+      formula: el.querySelector('.method-formula')?.textContent || '',
+      steps: [...el.querySelectorAll('.method-steps li')].length,
+      // The card must not be a chat bubble - it is not something she said.
+      isBubble: Boolean(el.closest('.chat-bubble')),
+    };
+  });
+  check('the prepared method is on screen', card.title.includes('疊合'), card.title);
+  check('with the formula shown rather than described',
+    card.formula.includes('R·sin'), card.formula);
+  check('and the steps to follow', card.steps >= 3, `${card.steps} steps`);
+  check('it is not presented as something she said', !card.isBubble);
+
+  const sent = fake.calls.systemInstructions[before] || '';
+  check('the model was given the method as instructions',
+    sent.includes('不要自己另外想一套做法') && sent.includes('R·sin'), sent.slice(0, 60));
+  check('and the ordinary speech rules are still in there',
+    sent.includes('語音合成朗讀'), sent.slice(0, 40));
+
+  // The whole reason for splitting the card off: symbols are unusable read
+  // aloud. So wait for this answer to actually start being spoken, then check
+  // that nothing from the card went with it.
+  const deadline = Date.now() + 15000;
+  while (ttsRequests.length === ttsBefore && Date.now() < deadline) {
+    await page.waitForTimeout(100);
+  }
+  check('the answer is being spoken', ttsRequests.length > ttsBefore,
+    `${ttsRequests.length - ttsBefore} requests`);
+  const spoken = ttsRequests.map((url) => new URL(url, BASE).searchParams.get('text') || '').join(' ');
+  check('but the formula never reached the speech endpoint',
+    !spoken.includes(card.formula) && !spoken.includes('R·sin') && !/[√·±]/.test(spoken),
+    spoken.slice(-60));
+}
+
+console.log('\nand an ordinary question gets no card');
+{
+  const cardsBefore = await page.locator('.method-card').count();
+  await page.fill('#questionInput', '學姊你平常都幾點睡？');
+  await page.click('#askBtn');
+  await page.waitForFunction(() => document.querySelectorAll('.chat-bubble-thinking').length === 0,
+    null, { timeout: 20000 });
+  await page.waitForTimeout(300);
+  check('no method card was added',
+    (await page.locator('.method-card').count()) === cardsBefore,
+    `${await page.locator('.method-card').count()} vs ${cardsBefore}`);
+  const sent = fake.calls.systemInstructions[fake.calls.systemInstructions.length - 1] || '';
+  check('and the model got no extra instructions', !sent.includes('速解法'), sent.slice(0, 60));
+}
+
 console.log('\npicking a voice and a tone');
 {
   const listed = await (await page.request.get(`${BASE}api/voices`)).json();

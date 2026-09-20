@@ -398,6 +398,52 @@ textarea.input { resize: none; }
 .control-btn:hover:not(:disabled) { background: var(--color-accent); color: #fff; }
 .control-btn:disabled { opacity: 0.55; cursor: default; }
 
+/* The teacher's prepared method, shown under the answer. Deliberately not a
+   chat bubble: it is not something 學姊 said, it is the reference she is
+   pointing at, and it is the one thing on screen that is exact rather than
+   paraphrased. */
+.method-card {
+  align-self: stretch;
+  background: var(--color-accent-100);
+  border: 1px solid var(--color-accent-600);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.method-title {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 14px;
+  color: var(--color-accent-800);
+}
+.method-formula {
+  font-size: 15px;
+  text-align: center;
+  padding: var(--space-3) var(--space-2);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  /* A formula is the one place where the digits and letters should line up, so
+     it gets a monospaced stack - but a CJK-capable one, because the surrounding
+     words are Chinese. */
+  font-family: ui-monospace, "Menlo", "Consolas", var(--font-body);
+}
+.method-steps {
+  margin: 0;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.method-aside {
+  font-size: 13px;
+  color: var(--color-neutral-600);
+  line-height: 1.7;
+}
+
 /* — right: chat — */
 .chat-main {
   flex: 1;

@@ -38,7 +38,7 @@ export function speechPcm({ rate = 24000, pattern } = {}) {
 }
 
 export function startFakeGemini({ chunks = 6, chunkDelayMs = 30, answer = '' } = {}) {
-  const calls = { interactions: 0, generateContent: 0, ttsTexts: [], ttsVoices: [] };
+  const calls = { interactions: 0, generateContent: 0, ttsTexts: [], ttsVoices: [], systemInstructions: [] };
 
   const server = createServer(async (req, res) => {
     let body = '';
@@ -91,6 +91,7 @@ export function startFakeGemini({ chunks = 6, chunkDelayMs = 30, answer = '' } =
           }],
         }));
       }
+      calls.systemInstructions.push(parsed.system_instruction?.parts?.[0]?.text || '');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: answer }] } }] }));
     }
