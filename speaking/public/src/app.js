@@ -1,7 +1,7 @@
 import { SpeakingPuppet } from "./puppet/speaking-puppet.js";
 import { SpeechQueue } from "./speech.js";
 
-const GREETING = "你好，我是學習問答助理。請描述你在課業上遇到的問題，我會盡力提供解說與示例。";
+const GREETING = "你好呀！我是學姊。不管是功課、考試還是社團，有什麼問題都可以問我喔。";
 
 const avatarCanvas = document.getElementById("avatarCanvas");
 const audioElements = [
@@ -69,7 +69,7 @@ function addChatRow(role, text) {
 
   const label = document.createElement("div");
   label.className = "chat-label";
-  label.textContent = role === "user" ? "你" : "AI 助理";
+  label.textContent = role === "user" ? "你" : "學姊";
 
   const bubble = document.createElement("div");
   bubble.className = "chat-bubble";

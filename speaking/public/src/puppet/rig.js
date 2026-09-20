@@ -62,9 +62,11 @@ export class Rig {
       spring: p.spring ? new Spring(p.spring) : null,
       transform: { angle: 0, scaleX: 1, scaleY: 1 },
       worldAngle: 0,
-      // Product of every ancestor's scaleY. The renderer divides this back
-      // out of the part's own scale so a parent's breath moves it without
-      // stretching it - see PortraitRenderer._applyPose.
+      // Product of every ancestor's APPLIED scale. The renderer divides this
+      // back out of the part's own scale, so a parent's breath moves the part
+      // without stretching it, and a part whose parent already cancelled the
+      // scale inherits 1 and simply rides that parent. See
+      // PortraitRenderer._applyPose.
       parentScaleY: 1,
     }));
 
@@ -98,7 +100,16 @@ export class Rig {
       t.scaleY = 1 + motion.breathe * part.breathe * BREATHE_SCALE;
       t.angle = motion.tilt * part.tilt * TILT_RAD + motion.sway * part.sway * SWAY_RAD;
 
-      part.parentScaleY = parent ? parent.parentScaleY * parent.transform.scaleY : 1;
+      // The product of what every ancestor ACTUALLY applies, not of their
+      // nominal scaleY. The difference matters the moment a part hangs off
+      // something that has already cancelled the scale: accumulating the
+      // nominal value made such a part cancel it a second time, around its
+      // own pivot, and a pivot further from the waist cancels it further.
+      // That is why the hair used to rise twice as far as the head it is
+      // attached to, which reads as a wig floating off the skull.
+      part.parentScaleY = parent
+        ? parent.parentScaleY * (parent.transform.scaleY / parent.parentScaleY)
+        : 1;
 
       const parentAngle = parent?.worldAngle ?? 0;
 

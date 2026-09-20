@@ -6,7 +6,11 @@ const PORT = process.env.PORT || 3000;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 const GEMINI_TTS_MODEL = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
-const GEMINI_TTS_VOICE = process.env.GEMINI_TTS_VOICE || "Puck";
+// Leda: one of Gemini's female voices, described as youthful and energetic,
+// which is the character speaking here. Google's own docs do not label the
+// voices by gender - Kore, Aoede, Zephyr and Leda are the female ones - so if
+// this is not the right read, swapping it is one environment variable.
+const GEMINI_TTS_VOICE = process.env.GEMINI_TTS_VOICE || "Leda";
 
 // Overridable so the tests can point the whole thing at a fake Gemini and
 // exercise the real request/response handling without a key.
