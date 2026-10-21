@@ -9,9 +9,9 @@
 // Paced the same way level1 teaches mechanics - one thing at a time, alone,
 // before it's combined with anything else - except here the "one thing" is
 // often narrative rather than a jump. The one ability still gated the old
-// way is dash (found later, via an adrenaline shot): it is movement tech,
-// not a weapon, so it stays in the story-flag system rather than the
-// pickup system.
+// way is sprinting: after five years in a coma the protagonist can only jog
+// until an adrenaline shot found later. It is movement, not a weapon, so it
+// stays in the story-flag system rather than the pickup system.
 
 import { LevelBuilder } from '../level.js';
 import { T } from '../../engine/tilemap.js';
@@ -58,8 +58,9 @@ export function buildOpening() {
   });
 
   // -- Section: a gap that only needs a jump - the story hasn't handed out
-  // anything else yet, and shouldn't need to. --------------------------
-  b.carve(24, GROUND, 26, ROWS - 1);
+  // anything else yet, and shouldn't need to. Two tiles: comfortable at the
+  // jog the protagonist is limited to this early. ------------------------
+  b.carve(24, GROUND, 25, ROWS - 1);
   b.platform(30, 34, GROUND - 3, T.MOSS); // an optional high ledge to explore
 
   // -- Section: the first weapon - a stick, found before the first fight so
@@ -103,9 +104,9 @@ export function buildOpening() {
   });
   b.enemy('Walker', 54, GROUND - 1);
 
-  // -- Section: the dash gate, then a gap sized so it cannot be crossed
-  // without it (verified by test/opening.test.mjs, the same way level1's
-  // shaft width was verified rather than eyeballed). ------------------------
+  // -- Section: the adrenaline shot, then a collapsed stretch of road sized
+  // so it can only be cleared at a sprint (verified by test/opening.test.mjs
+  // the same way level1's shaft width was verified rather than eyeballed). --
   b.storyTrigger(60, GROUND - 2, 61, GROUND - 1, {
     id: 'found_adrenaline',
     flag: 'found_adrenaline',
@@ -113,17 +114,11 @@ export function buildOpening() {
       game.scenes.push(new DialogueScene(game, findAdrenalineScript));
     },
   });
-  // 3 tiles (96px), not wider. A horizontal dash travels dashSpeed *
-  // dashDuration = 690 * 0.16 = ~110px while pinning vertical velocity to
-  // zero for the whole burst - but only for that burst. The instant it ends,
-  // gravity resumes from whatever height the player was at when they left
-  // solid ground, so the horizontal clearance has to be complete *before*
-  // they sink even a few pixels below the far ledge's surface, or they hit
-  // its vertical face instead of landing on top of it and slide down it to
-  // their death. A 5-tile gap left a ~20px shortfall verified experimentally
-  // (test/opening.test.mjs) where the dash reliably almost - but not quite -
-  // reached the far side; 3 tiles clears with margin.
-  b.carve(65, GROUND, 67, ROWS - 1);
+  // 6 tiles (192px). Measured with the double jump and a perfectly timed
+  // take-off: a jog carries 5 tiles at most, a sprint 7 - so no amount of
+  // jogging precision gets across, and a sprint still has a tile of slack
+  // for a take-off that is a little early.
+  b.carve(64, GROUND, 69, ROWS - 1);
 
   // -- Section: a leftover autonomous sentry gun, framed by a warning. -----
   b.storyTrigger(74, GROUND - 2, 75, GROUND - 1, {
@@ -187,4 +182,4 @@ export function openingOnStart(game) {
 // (findAdrenalineScript above). Double jump and wall jump are left unlocked:
 // this chapter's geometry never needs them, and gating an ability with no
 // narrative reason attached to it would just be an arbitrary restriction.
-export const OPENING_STARTING_ABILITIES = { dash: false };
+export const OPENING_STARTING_ABILITIES = { sprint: false };

@@ -118,11 +118,6 @@ export class Audio {
     this.tone({ freq: 480, endFreq: 880, type: 'triangle', dur: 0.14, gain: 0.16 });
   }
 
-  dash() {
-    this.noise({ dur: 0.22, gain: 0.2, freq: 400, endFreq: 2600, type: 'bandpass', q: 2 });
-    this.tone({ freq: 180, endFreq: 90, type: 'sawtooth', dur: 0.18, gain: 0.1 });
-  }
-
   land() {
     this.noise({ dur: 0.1, gain: 0.14, freq: 700, endFreq: 160 });
   }

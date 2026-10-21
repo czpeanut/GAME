@@ -5,6 +5,8 @@ import { Animator } from '../engine/animator.js';
 import { SpriteSheet } from '../engine/sprites.js';
 import { getWeapon } from './weapons.js';
 import { ATTACK_TIPS } from './attack-tips.js';
+import { GUN_ARM, GUN_SHOULDERS } from './gun-rig.js';
+import { gunArmImage } from './art.js';
 import {
   ANIMS,
   SHEETS,
@@ -25,7 +27,11 @@ import {
 // something is answered entirely by which weapon they are holding
 // (player.weaponId), not by an ability flag. There would be nothing left to
 // gate once fists are always available.
-const FULL_ABILITIES = { dash: true, doubleJump: true, wallJump: true };
+// Angle from the arm's pivot to its muzzle in the arm image (the barrel sits
+// above the arm's centre line).
+const BARREL_OFFSET = Math.atan2(GUN_ARM.muzzleY - GUN_ARM.pivotY, GUN_ARM.muzzleX - GUN_ARM.pivotX);
+
+const FULL_ABILITIES = { sprint: true, doubleJump: true, wallJump: true };
 
 // Shared by every Player instance. Loading is asynchronous and non-blocking;
 // until it finishes (or if it fails) the procedural art is drawn instead.
@@ -33,7 +39,7 @@ const playerSheet = new SpriteSheet(SHEETS[ART_SET]);
 
 // The player character. Almost every line here exists to make control feel
 // immediate: buffered input, forgiving ground checks, asymmetric gravity,
-// cancelable dashes and squash/stretch feedback.
+// a stamina-limited sprint and squash/stretch feedback.
 export class Player {
   constructor(x, y, game) {
     this.game = game;
@@ -47,12 +53,13 @@ export class Player {
     this.coyote = 0;
     this.jumpBufferT = 0;
     this.airJumps = PLAYER.maxAirJumps;
-    this.dashT = 0;
-    this.dashCd = 0;
-    this.dashDirX = 1;
-    this.dashDirY = 0;
-    this.hasDash = true;
     this.invuln = 0;
+    // Sprint: stamina 0..1, whether we are sprinting this frame, and whether
+    // running dry has left us winded (no sprinting until it recovers).
+    this.stamina = 1;
+    this.sprinting = false;
+    this.winded = false;
+    this.staminaRegenT = 0;
     this.wallJumpLock = 0;
     this.wallStick = 0;
     this.hurtT = 0;
@@ -90,7 +97,6 @@ export class Player {
     this.squashY = 1;
     this.runAnim = 0;
     this.muzzleFlash = 0;
-    this.trail = [];
     this.sheet = playerSheet;
     this.animator = new Animator(ANIMS, 'idle');
   }
@@ -106,7 +112,7 @@ export class Player {
   get centerY() { return this.body.centerY; }
 
   get invulnerable() {
-    return this.invuln > 0 || this.dashT > 0;
+    return this.invuln > 0;
   }
 
   // Read live from story state every time rather than cached at construction,
@@ -157,22 +163,17 @@ export class Player {
     // something. In the air the swing doesn't stop the drift.
     const striking = this.meleeT >= 0;
     const wantX = striking && this.grounded ? 0 : input.axisX;
-    if (this.dashT <= 0 && wantX !== 0 && this.wallJumpLock <= 0 && !striking) {
+    if (wantX !== 0 && this.wallJumpLock <= 0 && !striking) {
       this.facing = wantX;
     }
     this.aimY = input.axisY;
 
     this._updateGroundState(map);
-    this._handleDash(dt, input);
-
-    if (this.dashT > 0) {
-      this._dashMovement(dt);
-    } else {
-      this._horizontal(dt, wantX);
-      this._wallSlide(dt, input, wantX);
-      this._gravity(dt);
-      this._handleJump(input, map);
-    }
+    this._updateStamina(dt, input, wantX);
+    this._horizontal(dt, wantX);
+    this._wallSlide(dt, input, wantX);
+    this._gravity(dt);
+    this._handleJump(input, map);
 
     this._handleAttack(dt, input);
 
@@ -184,7 +185,6 @@ export class Player {
   _tickTimers(dt) {
     this.coyote -= dt;
     this.jumpBufferT -= dt;
-    this.dashCd -= dt;
     this.invuln -= dt;
     this.attackCd -= dt;
     this.wallJumpLock -= dt;
@@ -193,7 +193,6 @@ export class Player {
     this.fireBufferT -= dt;
     this.gunKick = Math.max(0, this.gunKick - dt * 7);
     this.fanFlash -= dt;
-    if (this.dashT > 0) this.dashT -= dt;
     if (this.wallStick > 0) this.wallStick -= dt;
   }
 
@@ -204,7 +203,6 @@ export class Player {
     if (onGround) {
       this.coyote = PLAYER.coyoteTime;
       this.airJumps = PLAYER.maxAirJumps;
-      if (this.dashCd <= 0) this.hasDash = true;
     }
     this.body.grounded = onGround;
   }
@@ -217,7 +215,8 @@ export class Player {
       let accel = grounded ? PLAYER.accelGround : PLAYER.accelAir;
       // Reversing direction gets extra bite so turns feel crisp.
       if (sign(b.vx) !== 0 && sign(b.vx) !== wantX) accel *= PLAYER.turnBoost;
-      b.vx = approach(b.vx, wantX * PLAYER.runSpeed, accel * dt);
+      const speed = this.sprinting ? PLAYER.sprintSpeed : PLAYER.runSpeed;
+      b.vx = approach(b.vx, wantX * speed, accel * dt);
     } else {
       const friction = grounded ? PLAYER.frictionGround : PLAYER.frictionAir;
       b.vx = approach(b.vx, 0, friction * dt);
@@ -254,10 +253,9 @@ export class Player {
 
     if (this.wallSliding) {
       this.wallStick = PLAYER.wallStickTime;
-      // Wall contact refunds the air jump and the dash, which is what makes
-      // vertical shafts climbable.
+      // Wall contact refunds the air jump, which is what makes vertical
+      // shafts climbable.
       this.airJumps = PLAYER.maxAirJumps;
-      if (this.dashCd <= 0) this.hasDash = true;
 
       if (this.game.loopFrame % 5 === 0) {
         this.game.particles.spawn({
@@ -346,54 +344,40 @@ export class Player {
     });
   }
 
-  _handleDash(dt, input) {
-    if (this.abilities.dash && input.pressed('dash') && this.hasDash && this.dashCd <= 0) {
-      let dx = input.axisX;
-      let dy = input.axisY;
-      // No direction held means dash the way you are facing.
-      if (dx === 0 && dy === 0) dx = this.facing;
+  // Sprinting is decided on the ground: in the air you keep whatever pace
+  // you left it with (letting go of sprint mid-air still drops back to a jog).
+  // Stamina drains while sprinting and refills after a short breather;
+  // running it dry leaves you winded until it is back to windedRecover.
+  _updateStamina(dt, input, wantX) {
+    const want = this.abilities.sprint && input.down('sprint') && wantX !== 0;
+    if (this.winded && this.stamina >= PLAYER.windedRecover) this.winded = false;
 
-      // Normalise so a diagonal dash is not faster than a straight one.
-      const len = Math.hypot(dx, dy) || 1;
-      this.dashDirX = dx / len;
-      this.dashDirY = dy / len;
+    if (this.body.grounded) this.sprinting = want && !this.winded && this.stamina > 0;
+    else if (!want) this.sprinting = false;
 
-      this.dashT = PLAYER.dashDuration;
-      this.dashCd = PLAYER.dashCooldown;
-      this.hasDash = false;
-      this.invuln = Math.max(this.invuln, PLAYER.dashInvuln);
-      if (dx !== 0) this.facing = sign(dx);
-
-      this.game.audio.dash();
-      this.game.camera.addTrauma(0.12);
-      this.game.freeze(0.04);
-      this.game.particles.burst(this.centerX, this.centerY, 16, {
-        color: [COLORS.playerDash, '#ffffff'],
-        speedMin: 60,
-        speedMax: 260,
-        angle: Math.atan2(-this.dashDirY, -this.dashDirX),
-        spread: 0.7,
-        lifeMin: 0.15,
-        lifeMax: 0.4,
-        shape: 'streak',
-        sizeMin: 2,
-        sizeMax: 5,
-      });
-    }
-  }
-
-  _dashMovement(dt) {
-    const b = this.body;
-    b.vx = this.dashDirX * PLAYER.dashSpeed;
-    b.vy = this.dashDirY * PLAYER.dashSpeed;
-
-    // Afterimages are captured during the dash and faded out afterwards.
-    this.trail.push({ x: b.x, y: b.y, life: 0.28, max: 0.28 });
-
-    if (this.dashT <= 0) {
-      // Bleed off speed on exit so the dash doesn't fling the player.
-      b.vx *= 0.55;
-      b.vy *= this.dashDirY < 0 ? 0.5 : 0.25;
+    if (this.sprinting) {
+      this.stamina = Math.max(0, this.stamina - PLAYER.staminaDrain * dt);
+      this.staminaRegenT = PLAYER.staminaRegenDelay;
+      if (this.stamina === 0) {
+        this.sprinting = false;
+        this.winded = true;
+      }
+      // Kicked-up dust at the heels.
+      if (this.body.grounded && this.game.loopFrame % 6 === 0) {
+        this.game.particles.spawn({
+          x: this.centerX - this.facing * 6,
+          y: this.body.bottom - 1,
+          vx: -this.facing * rand(20, 60),
+          vy: rand(-40, -10),
+          life: rand(0.25, 0.45),
+          size: rand(1.5, 3),
+          color: 'rgba(170,150,125,0.7)',
+          gravity: 60,
+        });
+      }
+    } else {
+      this.staminaRegenT -= dt;
+      if (this.staminaRegenT <= 0) this.stamina = Math.min(1, this.stamina + PLAYER.staminaRegen * dt);
     }
   }
 
@@ -492,9 +476,11 @@ export class Player {
     this.isAiming = input.down('aim');
     this.aimAngle = this._aimAngle(input);
 
-    // While aiming or shooting, the body turns to face the gun.
+    // The body faces where the gun points: always when steering with the
+    // mouse (backing away from the cursor reads as walking backwards, gun
+    // still on target), otherwise while aiming or shooting.
     const dirX = Math.cos(this.aimAngle);
-    if ((this.isAiming || input.down('fire')) && Math.abs(dirX) > 0.05 && this.dashT <= 0) {
+    if ((this.isAiming || input.down('fire') || input.pointerActive) && Math.abs(dirX) > 0.05) {
       this.facing = dirX > 0 ? 1 : -1;
     }
 
@@ -514,7 +500,7 @@ export class Player {
     if (input.pointerActive && cam && cam.x !== undefined) {
       const tx = cam.x + input.pointerX;
       const ty = cam.y + input.pointerY;
-      return Math.atan2(ty - this.gunY, tx - this.centerX);
+      return Math.atan2(ty - this.gunY, tx - this.gunX);
     }
     let dx = this.facing;
     let dy = 0;
@@ -525,9 +511,70 @@ export class Player {
     return Math.atan2(dy, dx);
   }
 
-  // Shoulder height: where the gun is held and every shot starts from.
+  // The shoulder the gun arm pivots on: aim lines are measured from here.
+  // With the rig it is the drawn shoulder of the current body frame;
+  // otherwise a fixed point at chest height.
+  get gunX() {
+    const s = this._rigShoulder();
+    return s ? this.body.centerX + this.facing * s.x : this.centerX;
+  }
+
   get gunY() {
-    return this.centerY - 2;
+    const s = this._rigShoulder();
+    return s ? this.body.bottom + s.y : this.centerY - 2;
+  }
+
+  // True when the gun is drawn as the two-layer rig (armless body + arm).
+  // Hurt and wall-slide keep their own full-body frames, gun lowered.
+  get _gunRigActive() {
+    return (
+      this.weapon.type === 'ranged' &&
+      this.sheet.ready &&
+      SHEETS[ART_SET].hasGunRig &&
+      !!gunArmImage?.ready &&
+      this.hurtT <= 0 &&
+      !this.wallSliding
+    );
+  }
+
+  // Which armless body frame goes under the arm.
+  _gunBodyCell() {
+    const b = this.body;
+    if (!b.grounded) return { name: 'gunStand', col: b.vy < 0 ? 2 : 3 };
+    if (Math.abs(b.vx) > 20) {
+      return { name: 'gunRun', col: this.animator.name === 'run' ? this.animator.frame % 6 : 0 };
+    }
+    return { name: 'gunStand', col: this.animator.frame % 2 };
+  }
+
+  _rigShoulder() {
+    if (!this._gunRigActive) return null;
+    const { name, col } = this._gunBodyCell();
+    return GUN_SHOULDERS[name][col];
+  }
+
+  // The arm's angle in the sprite's own (right-facing) space: mirrored when
+  // facing left, clamped short of straight up/down, and kicked muzzle-up
+  // right after a shot. The barrel sits a little above the arm's axis, so
+  // the arm is turned by that offset to put the barrel itself on target.
+  get _armAngle() {
+    let a = this.facing > 0 ? this.aimAngle : Math.PI - this.aimAngle;
+    a = Math.atan2(Math.sin(a), Math.cos(a));
+    return clamp(a, -1.45, 1.45) - BARREL_OFFSET - this.gunKick * 0.35;
+  }
+
+  // Where the barrel ends in world space - shots and the muzzle flash start
+  // here, so they come out of the drawn pistol.
+  muzzlePoint() {
+    if (!this._gunRigActive) {
+      return { x: this.gunX + Math.cos(this.aimAngle) * 16, y: this.gunY + Math.sin(this.aimAngle) * 16 };
+    }
+    const a = this._armAngle;
+    const dx = GUN_ARM.muzzleX - GUN_ARM.pivotX - this.gunKick * 2;
+    const dy = GUN_ARM.muzzleY - GUN_ARM.pivotY;
+    const px = Math.cos(a) * dx - Math.sin(a) * dy;
+    const py = Math.sin(a) * dx + Math.cos(a) * dy;
+    return { x: this.gunX + this.facing * px, y: this.gunY + py };
   }
 
   // The fan drifts toward a target half-angle: tight while aiming, wide from
@@ -549,8 +596,7 @@ export class Player {
     const angle = this.aimAngle + rand(-this.spread, this.spread);
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
-    const muzzleX = this.centerX + Math.cos(this.aimAngle) * 16;
-    const muzzleY = this.gunY + Math.sin(this.aimAngle) * 16;
+    const { x: muzzleX, y: muzzleY } = this.muzzlePoint();
 
     this.game.fireHitscan(muzzleX, muzzleY, angle, w);
 
@@ -647,7 +693,6 @@ export class Player {
 
     // Drive the sprite animation from the same state the physics just produced.
     const state = {
-      dashT: this.dashT,
       hurtT: this.hurtT,
       wallSliding: this.wallSliding,
       grounded: this.grounded,
@@ -676,9 +721,6 @@ export class Player {
     } else {
       this.runAnim = 0;
     }
-
-    for (const t of this.trail) t.life -= dt;
-    this.trail = this.trail.filter((t) => t.life > 0);
   }
 
   hurt(amount, knockDir = 0, fromHazard = false) {
@@ -691,8 +733,6 @@ export class Player {
     const dir = knockDir || -this.facing;
     this.body.vx = dir * PLAYER.hurtKnockbackX;
     this.body.vy = -PLAYER.hurtKnockbackY;
-    // Being hurt cancels a dash, otherwise the dash carries you back in.
-    this.dashT = 0;
 
     this.game.camera.addTrauma(0.5);
     this.game.freeze(0.1);
@@ -744,11 +784,10 @@ export class Player {
     this.alive = true;
     this.health = PLAYER.maxHealth;
     this.invuln = 1.2;
-    this.dashT = 0;
-    this.dashCd = 0;
-    this.hasDash = true;
     this.airJumps = PLAYER.maxAirJumps;
-    this.trail.length = 0;
+    this.stamina = 1;
+    this.sprinting = false;
+    this.winded = false;
     // The weapon itself is not reset here - dying does not make you drop
     // whatever you picked up. Only the in-progress aim state is cleared, so a
     // death mid-aim does not carry a phantom steadied fan into the respawn.
@@ -767,6 +806,10 @@ export class Player {
     if (this._spriteAttacking) {
       return { col: this.meleePhase, row: ANIMS[this.meleeWeapon.anim].row };
     }
+    if (this._gunRigActive) {
+      const { name, col } = this._gunBodyCell();
+      return { col, row: ANIMS[name].row };
+    }
     return { col: this.animator.frame, row: this.animator.row };
   }
 
@@ -774,52 +817,24 @@ export class Player {
     const b = this.body;
     const useSprite = this.sheet.ready;
 
-    // Dash afterimages first, so they sit behind the character.
-    for (const t of this.trail) {
-      const a = t.life / t.max;
-      ctx.globalAlpha = a * 0.45;
-      if (useSprite) {
-        ctx.save();
-        ctx.translate(t.x + b.w / 2, t.y + b.h);
-        ctx.scale(this.facing, 1);
-        this.sheet.drawFrame(
-          ctx,
-          this.animator.frame,
-          this.animator.row,
-          -FRAME_W / 2,
-          -FRAME_H + 1
-        );
-        ctx.restore();
-      } else {
-        ctx.fillStyle = COLORS.playerDash;
-        ctx.fillRect(t.x, t.y, b.w, b.h);
-      }
-    }
-    ctx.globalAlpha = 1;
-
-    // Blink while invulnerable, but never while dashing (the dash reads better
-    // as a solid streak).
-    if (this.invuln > 0 && this.dashT <= 0 && Math.floor(this.invuln * 20) % 2 === 0) {
+    // Blink while invulnerable.
+    if (this.invuln > 0 && Math.floor(this.invuln * 20) % 2 === 0) {
       return;
     }
 
     ctx.save();
 
-    if (this.dashT > 0) {
-      ctx.shadowColor = COLORS.playerDash;
-      ctx.shadowBlur = 18;
-    }
-
     if (useSprite) this._renderSprite(ctx);
     else this._renderShapes(ctx);
 
-    this._renderWeapon(ctx);
+    if (this._gunRigActive) this._renderGunArm(ctx);
+    else this._renderWeapon(ctx);
     this._renderMuzzleFlash(ctx);
 
     ctx.restore();
 
-    // Outside the dash-glow save/restore - the aim fan is a world-space
-    // indicator, not part of the character's own shadow/glow treatment.
+    // Outside the character's save/restore - the aim fan is a world-space
+    // indicator, not part of the sprite's transform.
     this._renderAimFan(ctx);
   }
 
@@ -871,11 +886,24 @@ export class Player {
 
   // A short star of light at the muzzle - two crossed spikes plus a core,
   // brighter and larger than anything else the player emits.
+  // The near arm holding the pistol: pivoted on the body frame's shoulder,
+  // rotated to the aim, mirrored with the body. Drawn over the armless body.
+  _renderGunArm(ctx) {
+    const img = gunArmImage.image;
+    ctx.save();
+    ctx.translate(Math.round(this.gunX), Math.round(this.gunY));
+    ctx.scale(this.facing, 1);
+    ctx.rotate(this._armAngle);
+    ctx.drawImage(img, -GUN_ARM.pivotX - this.gunKick * 2, -GUN_ARM.pivotY);
+    ctx.restore();
+  }
+
   _renderMuzzleFlash(ctx) {
     if (this.muzzleFlash <= 0) return;
     const a = this.aimAngle;
-    const x = this.centerX + Math.cos(a) * 18;
-    const y = this.gunY + Math.sin(a) * 18;
+    const m = this.muzzlePoint();
+    const x = m.x + Math.cos(a) * 2;
+    const y = m.y + Math.sin(a) * 2;
     const k = this.muzzleFlash / 0.07;
     ctx.save();
     ctx.translate(x, y);
@@ -972,7 +1000,7 @@ export class Player {
 
     const t = this.steadiness(w);
     const hue = 28 + 100 * t;
-    const ox = this.centerX;
+    const ox = this.gunX;
     const oy = this.gunY;
     const r = 120;
     const a0 = this.aimAngle - this.spread;

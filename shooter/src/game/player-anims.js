@@ -13,10 +13,10 @@ import { ART_SET } from './art.js';
 //   ai      - Gemini-generated frames, packed by tools/ai_spritesheet.py
 //   classic - the procedural sheet drawn by tools/make-spritesheet.mjs
 export const SHEETS = {
-  ai: { src: './assets/ai/player.png', frameW: 64, frameH: 48, hasAttacks: true },
+  ai: { src: './assets/ai/player.png', frameW: 64, frameH: 48, hasAttacks: true, hasGunRig: true },
   // The procedural sheet stops at row 6 (hurt): attacks there fall back to
   // the standing pose plus a drawn weapon.
-  classic: { src: './assets/player.png', frameW: 32, frameH: 40, hasAttacks: false },
+  classic: { src: './assets/player.png', frameW: 32, frameH: 40, hasAttacks: false, hasGunRig: false },
 };
 
 export { ART_SET };
@@ -31,6 +31,8 @@ export const ANIMS = {
   run: { row: 1, frames: 6, fps: 14, loop: true },
   jump: { row: 2, frames: 2, fps: 10, loop: false },
   fall: { row: 3, frames: 2, fps: 10, loop: false },
+  // Row 4 held the dash, which sprinting replaced. The row stays in both
+  // sheets so every later row keeps its index; nothing selects it now.
   dash: { row: 4, frames: 2, fps: 18, loop: true },
   wall: { row: 5, frames: 2, fps: 8, loop: true },
   hurt: { row: 6, frames: 2, fps: 12, loop: false },
@@ -38,17 +40,21 @@ export const ANIMS = {
   // by fps - the player picks the frame from the attack's own phase (see
   // weapons.js), so the strike frame is on screen exactly while the hitbox
   // is live.
-  punch: { row: 7, frames: 3, fps: 1, loop: false },
-  stick: { row: 8, frames: 3, fps: 1, loop: false },
-  knife: { row: 9, frames: 3, fps: 1, loop: false },
+  punch: { row: 7, frames: 3, fps: 1, loop: false, aiOnly: true },
+  stick: { row: 8, frames: 3, fps: 1, loop: false, aiOnly: true },
+  knife: { row: 9, frames: 3, fps: 1, loop: false, aiOnly: true },
+  // Gun rig bodies, drawn WITHOUT arms - the arm holding the pistol is a
+  // separate layer rotated toward the crosshair (gun-rig.js). gunStand is
+  // [idle, idle (breath), jump, fall]; gunRun is the run cycle.
+  gunStand: { row: 10, frames: 4, fps: 1, loop: false, aiOnly: true },
+  gunRun: { row: 11, frames: 6, fps: 14, loop: true, aiOnly: true },
 };
 
 // Chooses an animation from the player's state.
 //
-// Order matters: the checks run most-specific first, so a dash reads as a dash
+// Order matters: the checks run most-specific first, so a hit reads as a hit
 // even though the player is also airborne and moving.
 export function pickPlayerAnimation(s) {
-  if (s.dashT > 0) return 'dash';
   if (s.hurtT > 0) return 'hurt';
   if (s.wallSliding) return 'wall';
   if (!s.grounded) return s.vy < 0 ? 'jump' : 'fall';
