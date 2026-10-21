@@ -13,8 +13,10 @@ import { ART_SET } from './art.js';
 //   ai      - Gemini-generated frames, packed by tools/ai_spritesheet.py
 //   classic - the procedural sheet drawn by tools/make-spritesheet.mjs
 export const SHEETS = {
-  ai: { src: './assets/ai/player.png', frameW: 48, frameH: 48 },
-  classic: { src: './assets/player.png', frameW: 32, frameH: 40 },
+  ai: { src: './assets/ai/player.png', frameW: 64, frameH: 48, hasAttacks: true },
+  // The procedural sheet stops at row 6 (hurt): attacks there fall back to
+  // the standing pose plus a drawn weapon.
+  classic: { src: './assets/player.png', frameW: 32, frameH: 40, hasAttacks: false },
 };
 
 export { ART_SET };
@@ -32,6 +34,13 @@ export const ANIMS = {
   dash: { row: 4, frames: 2, fps: 18, loop: true },
   wall: { row: 5, frames: 2, fps: 8, loop: true },
   hurt: { row: 6, frames: 2, fps: 12, loop: false },
+  // Melee attacks: frame 0 wind-up, 1 strike, 2 recovery. They are not timed
+  // by fps - the player picks the frame from the attack's own phase (see
+  // weapons.js), so the strike frame is on screen exactly while the hitbox
+  // is live.
+  punch: { row: 7, frames: 3, fps: 1, loop: false },
+  stick: { row: 8, frames: 3, fps: 1, loop: false },
+  knife: { row: 9, frames: 3, fps: 1, loop: false },
 };
 
 // Chooses an animation from the player's state.

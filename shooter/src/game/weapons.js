@@ -5,12 +5,14 @@
 //
 // Two families:
 //
-//   melee  - press to swing immediately; damage resolves instantly against
-//            anything the swing's hitbox touches (multiple enemies can be
-//            hit by one swing - a blade or a bat sweeping through a group is
-//            not blocked by hitting the first target, unlike a bullet).
-//            No aiming, no ramp-up: what you have in your hand is exactly as
-//            accurate as your reach.
+//   melee  - every attack has three phases, matching its three animation
+//            frames: `windup` (drawing back - no damage yet), `active` (the
+//            strike: the hitbox resolves once, at its first frame, against
+//            everything it touches, and the body steps in by `lunge`) and
+//            `recover` (pulling back). A heavier weapon winds up longer and
+//            recovers slower - the stick hits harder but commits you more.
+//            `cooldown` is the time from one attack's start to the next.
+//            `anim` names the player-sheet row with this attack's frames.
 //
 //   ranged - aim and trigger are separate inputs (right / left mouse
 //            button). Every shot is drawn uniformly from a fan of half-angle
@@ -34,19 +36,29 @@ export const WEAPONS = {
     name: '拳頭',
     type: 'melee',
     damage: 1,
-    range: 14,
-    swingTime: 0.12,
-    cooldown: 0.24,
-    knockback: 70,
+    range: 16,
+    windup: 0.07,
+    active: 0.07,
+    recover: 0.12,
+    cooldown: 0.28,
+    lunge: 70,
+    hitstop: 0.04,
+    knockback: 90,
+    anim: 'punch',
   },
   stick: {
     id: 'stick',
     name: '棍棒',
     type: 'melee',
     damage: 1,
-    range: 24,
-    swingTime: 0.2,
-    cooldown: 0.32,
+    range: 26,
+    windup: 0.15,
+    active: 0.09,
+    recover: 0.2,
+    cooldown: 0.46,
+    lunge: 50,
+    hitstop: 0.07,
+    anim: 'stick',
     // A blunt weapon's advantage is knockback, not damage - it staggers
     // more than it wounds.
     knockback: 160,
@@ -56,10 +68,15 @@ export const WEAPONS = {
     name: '刀具',
     type: 'melee',
     damage: 2,
-    range: 17,
-    swingTime: 0.14,
-    cooldown: 0.26,
+    range: 20,
+    windup: 0.07,
+    active: 0.07,
+    recover: 0.12,
+    cooldown: 0.28,
+    lunge: 90,
+    hitstop: 0.05,
     knockback: 90,
+    anim: 'knife',
   },
   pistol: {
     id: 'pistol',
