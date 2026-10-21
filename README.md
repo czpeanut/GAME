@@ -13,6 +13,8 @@ WebAudio 即時合成。
 
 ## 快速開始
 
+**線上試玩：<https://czpeanut.github.io/GAME/shooter/>**
+
 ```bash
 npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 ```
@@ -503,6 +505,20 @@ npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，�
 - 敵人目前仍是程式繪製；若也想改用 sprite，同一套 `SpriteSheet` + `Animator`
   可以直接沿用。
 - 調整手感：只改 `constants.js`，然後 `npm test` 確認沒有破壞既有機制。
+
+## 部署到 GitHub Pages
+
+這個 repo 的 GitHub Pages 同時放了其他專案，遊戲放在網站的 `shooter/` 資料夾：
+
+```bash
+tools/deploy-pages.sh
+```
+
+腳本會抓下 Pages 正在服務的分支（預設 `claude/optimistic-dijkstra-dkl4f9`，可用
+`PAGES_BRANCH` 改）、只把瀏覽器需要的檔案（`index.html`、`src/`、sprite sheet）
+複製進 `shooter/`（可用 `PAGES_DIR` 改），其他專案的檔案完全不動，然後提交推送。
+GitHub 約一分鐘內就會更新網站。如果之後在 Settings → Pages 換了來源分支，
+記得同步改 `PAGES_BRANCH`。
 
 ## 授權
 
