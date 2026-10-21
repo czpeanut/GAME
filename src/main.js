@@ -22,12 +22,11 @@ canvas.height = VIEW.height;
 ctx.imageSmoothingEnabled = false;
 
 function resize() {
-  const scale = Math.max(
-    1,
-    Math.min(window.innerWidth / VIEW.width, window.innerHeight / VIEW.height)
-  );
+  const scale = Math.min(window.innerWidth / VIEW.width, window.innerHeight / VIEW.height);
   // Snap to whole or half steps so tiles never land on fractional pixels.
-  const snapped = scale >= 2 ? Math.floor(scale) : Math.floor(scale * 2) / 2;
+  // Below 1x (a phone held upright, say) there is no clean step to snap to,
+  // and overflowing the screen would be worse than a slightly soft pixel.
+  const snapped = scale >= 2 ? Math.floor(scale) : scale >= 1 ? Math.floor(scale * 2) / 2 : scale;
   canvas.style.width = `${VIEW.width * snapped}px`;
   canvas.style.height = `${VIEW.height * snapped}px`;
 }
