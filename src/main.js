@@ -36,6 +36,7 @@ window.addEventListener('resize', resize);
 resize();
 
 const input = new Input(window);
+input.attachPointer(canvas, VIEW.width, VIEW.height);
 setupTouchControls(input);
 
 const loop = new Loop({
@@ -53,6 +54,7 @@ const game = new Game(ctx, input, loop, {
     'MOVE      A D  /  arrows',
     'JUMP      SPACE  /  K',
     'TALK      E          (approach a person)',
+    'GUN       RIGHT-CLICK aim  ·  LEFT-CLICK fire',
     '',
     '（射擊與衝刺，將在劇情中逐步解鎖）',
   ],

@@ -92,12 +92,15 @@ export class Audio {
   }
 
   shoot() {
-    this.tone({ freq: 880, endFreq: 220, type: 'square', dur: 0.09, gain: 0.14 });
-    this.noise({ dur: 0.07, gain: 0.09, freq: 3000, endFreq: 600 });
+    // Sharp crack: broadband noise burst with a fast filter sweep.
+    this.noise({ dur: 0.09, gain: 0.32, freq: 6000, endFreq: 900, type: 'lowpass' });
+    this.tone({ freq: 620, endFreq: 140, type: 'square', dur: 0.07, gain: 0.1 });
     // A low thump under the crack sells a firearm as something with real
     // stopping power - deliberately absent from swing(), which should sound
     // small and human by comparison.
-    this.tone({ freq: 120, endFreq: 45, type: 'sine', dur: 0.12, gain: 0.22 });
+    this.tone({ freq: 140, endFreq: 38, type: 'sine', dur: 0.18, gain: 0.34 });
+    // Echo tail off the surrounding ruins.
+    this.noise({ dur: 0.45, gain: 0.07, freq: 900, endFreq: 180, delay: 0.05, type: 'lowpass' });
   }
 
   // A melee swing - a quick, unglamorous whoosh. No low end, no crack: this

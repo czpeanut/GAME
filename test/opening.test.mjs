@@ -191,16 +191,17 @@ console.log('\nweapons are physical pickups, not ability flags');
   const ctx = makePlayer(level.playerStart.x, level.playerStart.y);
   run(ctx, () => ['fire'], 10);
   check('an unarmed press resolves as a melee swing, not a shot',
-    ctx.game.bullets.length === 0 && ctx.game.meleeHits.length > 0,
-    `bullets=${ctx.game.bullets.length} meleeHits=${ctx.game.meleeHits.length}`);
+    ctx.game.shots.length === 0 && ctx.game.meleeHits.length > 0,
+    `shots=${ctx.game.shots.length} meleeHits=${ctx.game.meleeHits.length}`);
 
   // Equipping the pistol (what Old Zhou's "give" node does) switches the
   // very next press to a ranged shot.
   ctx.p.equipWeapon('pistol');
-  const bulletsBefore = ctx.game.bullets.length;
+  run(ctx, () => [], 1); // release, so the next press is a fresh trigger pull
+  const shotsBefore = ctx.game.shots.length;
   run(ctx, () => ['fire'], 10);
   check('equipping the pistol makes the next press a shot, immediately',
-    ctx.game.bullets.length > bulletsBefore);
+    ctx.game.shots.length > shotsBefore);
 }
 
 console.log('\nOld Zhou\'s dialogue changes once the gun has been given');

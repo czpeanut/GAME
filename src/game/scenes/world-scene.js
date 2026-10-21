@@ -11,6 +11,7 @@ import { TileRenderer } from '../tilerender.js';
 import { Camera } from '../../engine/camera.js';
 import { Particles } from '../../engine/particles.js';
 import { aabb } from '../../engine/math.js';
+import { isSolidTile } from '../../engine/tilemap.js';
 
 // The gameplay world: level geometry, the player, enemies, bullets,
 // checkpoints, story triggers and NPCs. Sits at the bottom of the scene
@@ -53,6 +54,7 @@ export class WorldScene extends Scene {
 
     this.player = new Player(level.playerStart.x, level.playerStart.y, this.game);
     this.bullets = [];
+    this.tracers = [];
     this.enemies = [];
     this._spawnEnemies();
 
@@ -107,6 +109,85 @@ export class WorldScene extends Scene {
 
   // Resolves an instant melee swing: every living enemy overlapping `rect`
   // takes the hit. Unlike a bullet, a swing does not stop at the first
+  // A gunshot, resolved the instant it is fired: the ray stops at the first
+  // solid tile or the nearest enemy it crosses, whichever comes first, out
+  // to the weapon's range. One-way platforms don't stop it (they are thin
+  // planks, not cover). Leaves a tracer streak behind for the eye; returns
+  // the impact so callers/tests can see what happened.
+  fireHitscan(ox, oy, angle, w) {
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    const map = this.level.map;
+
+    let dist = w.range;
+    let target = null;
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      const t = rayVsRect(ox, oy, dx, dy, e.rect);
+      if (t !== null && t < dist) {
+        dist = t;
+        target = e;
+      }
+    }
+    // March the tile grid up to that distance; 2px steps cannot skip a
+    // 32px tile.
+    for (let t = 0; t < dist; t += 2) {
+      if (isSolidTile(map.atPixel(ox + dx * t, oy + dy * t))) {
+        dist = t;
+        target = null;
+        break;
+      }
+    }
+
+    const hx = ox + dx * dist;
+    const hy = oy + dy * dist;
+    this.tracers.push({ x0: ox, y0: oy, x1: hx, y1: hy, life: 0.1, max: 0.1, color: w.tracerColor });
+
+    if (target) {
+      target.hurt(w.damage, dx >= 0 ? 1 : -1, w.knockback);
+      // A brief hit-stop sells the impact more than any amount of particles.
+      this.freeze(0.045);
+      this.camera.addTrauma(0.08);
+      this.particles.burst(hx, hy, 12, {
+        color: ['#ff4d5e', '#b3122a', '#ffffff'],
+        speedMin: 60,
+        speedMax: 240,
+        angle,
+        spread: 0.7,
+        lifeMin: 0.1,
+        lifeMax: 0.3,
+        sizeMin: 1,
+        sizeMax: 3,
+      });
+    } else if (dist < w.range) {
+      // Wall hit: sparks thrown back toward the shooter, plus concrete dust.
+      this.particles.burst(hx, hy, 9, {
+        color: ['#fff2c8', '#ffb44d', '#ffffff'],
+        speedMin: 50,
+        speedMax: 220,
+        angle: angle + Math.PI,
+        spread: 1.0,
+        lifeMin: 0.06,
+        lifeMax: 0.22,
+        shape: 'streak',
+        sizeMin: 1,
+        sizeMax: 3,
+      });
+      this.particles.burst(hx, hy, 5, {
+        color: ['rgba(180,170,155,0.6)'],
+        speedMin: 10,
+        speedMax: 50,
+        angle: angle + Math.PI,
+        spread: 1.4,
+        lifeMin: 0.25,
+        lifeMax: 0.5,
+        sizeMin: 2,
+        sizeMax: 4,
+      });
+    }
+    return { x: hx, y: hy, target, dist };
+  }
+
   // target - a blade or a bat sweeping through a cluster of enemies hits all
   // of them, which is both realistic and is most of what makes melee weapons
   // worth using instead of just waiting to find a gun.
@@ -124,6 +205,7 @@ export class WorldScene extends Scene {
     const cp = this.activeCheckpoint;
     this.player.respawn(cp.x, cp.y);
     this.bullets.length = 0;
+    this.tracers.length = 0;
     this.freezeT = 0;
 
     // Every enemy is restored on death, so a retry always starts from a known
@@ -171,6 +253,8 @@ export class WorldScene extends Scene {
     this.player.update(dt, input, map);
     for (const e of this.enemies) e.update(dt, this.player, map);
     for (const b of this.bullets) b.update(dt, map);
+    for (const t of this.tracers) t.life -= dt;
+    this.tracers = this.tracers.filter((t) => t.life > 0);
 
     this._resolveCollisions();
     this._checkCheckpoints();
@@ -357,6 +441,7 @@ export class WorldScene extends Scene {
       if (this.camera.isVisible(e)) e.render(ctx);
     }
     for (const b of this.bullets) b.render(ctx);
+    this._renderTracers(ctx);
 
     this.player.render(ctx);
     this.particles.render(ctx);
@@ -370,6 +455,43 @@ export class WorldScene extends Scene {
     }
 
     if (this.showHud) this.game.hud.render(ctx, this.game);
+  }
+
+  // Each shot is a streak of fire: a wide orange glow under a thin white-hot
+  // core, both fading over ~0.1s. Additive blending makes overlapping
+  // streaks burn brighter instead of muddier.
+  _renderTracers(ctx) {
+    if (!this.tracers.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    for (const t of this.tracers) {
+      const k = t.life / t.max;
+      ctx.strokeStyle = t.color;
+      ctx.globalAlpha = 0.45 * k;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(t.x0, t.y0);
+      ctx.lineTo(t.x1, t.y1);
+      ctx.stroke();
+      ctx.strokeStyle = '#fffbe8';
+      ctx.globalAlpha = k;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      // The core trails behind the glow: it shrinks from the muzzle end
+      // toward the impact as it fades, reading as motion, not a static line.
+      const f = 1 - k;
+      ctx.moveTo(t.x0 + (t.x1 - t.x0) * f * 0.6, t.y0 + (t.y1 - t.y0) * f * 0.6);
+      ctx.lineTo(t.x1, t.y1);
+      ctx.stroke();
+      // Impact flare.
+      ctx.globalAlpha = k;
+      ctx.fillStyle = '#ffe9b0';
+      ctx.beginPath();
+      ctx.arc(t.x1, t.y1, 3 * k + 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   _renderCheckpoints(ctx) {
@@ -454,4 +576,24 @@ export class WorldScene extends Scene {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, VIEW.width, VIEW.height);
   }
+}
+
+// Slab test: distance along the (unit) ray to where it first enters `r`, or
+// null if it misses or the box is behind the origin.
+function rayVsRect(ox, oy, dx, dy, r) {
+  let tmin = 0;
+  let tmax = Infinity;
+  for (const [o, d, lo, hi] of [[ox, dx, r.x, r.x + r.w], [oy, dy, r.y, r.y + r.h]]) {
+    if (Math.abs(d) < 1e-9) {
+      if (o < lo || o > hi) return null;
+      continue;
+    }
+    let t1 = (lo - o) / d;
+    let t2 = (hi - o) / d;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+  return tmin;
 }

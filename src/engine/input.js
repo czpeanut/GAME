@@ -1,5 +1,5 @@
-// Unified input: keyboard + gamepad + on-screen touch buttons, exposed as
-// named actions.
+// Unified input: keyboard + mouse + gamepad + on-screen touch buttons,
+// exposed as named actions.
 //
 // Every action reports three things, which is what responsive platformer code
 // actually needs:
@@ -7,7 +7,7 @@
 //   pressed(a)   - went down on this frame (edge)
 //   released(a)  - went up on this frame (edge)
 //
-// Keyboard, gamepad and touch state are tracked in separate sets and unioned
+// Keyboard, mouse, gamepad and touch state are tracked in separate sets and unioned
 // each poll. Sharing one set would let an idle controller clear a key the
 // player is holding.
 //
@@ -16,6 +16,12 @@
 // this class just treats that as a third input source alongside the other
 // two. Nothing downstream (Player, DialogueScene, ...) needs to know or care
 // which source an action came from.
+//
+// The mouse is the one source that also carries a position: attachPointer()
+// tracks the cursor in the game's internal (VIEW) resolution so a firearm can
+// aim at it. `pointerActive` says whether that position should be trusted -
+// it switches on when the mouse moves over the canvas and off again the
+// moment another source starts aiming (keyboard up/down, gamepad, touch).
 
 const KEY_MAP = {
   KeyA: 'left',
@@ -30,6 +36,7 @@ const KEY_MAP = {
   KeyK: 'jump',
   KeyJ: 'fire',
   KeyZ: 'fire',
+  KeyU: 'aim',
   KeyE: 'interact',
   KeyL: 'dash',
   ShiftLeft: 'dash',
@@ -48,6 +55,7 @@ const PAD_MAP = {
   2: 'fire', // X
   3: 'interact', // Y
   5: 'dash', // RB
+  6: 'aim', // LT
   7: 'fire', // RT
   9: 'pause', // Start
   12: 'up',
@@ -58,11 +66,18 @@ const PAD_MAP = {
 
 const DEADZONE = 0.35;
 
+// Mouse buttons -> actions: left fires, right aims down the sights.
+const MOUSE_MAP = { 0: 'fire', 2: 'aim' };
+
 export class Input {
   constructor(target = window) {
     this.keys = new Set(); // keyboard-held actions
     this.pad = new Set(); // gamepad-held actions
     this.touch = new Set(); // on-screen touch-button-held actions
+    this.mouse = new Set(); // mouse-button-held actions
+    this.pointerX = 0; // cursor position in VIEW pixels
+    this.pointerY = 0;
+    this.pointerActive = false;
     // Actions that saw a keydown since the last poll. Key events arrive from the
     // browser at an arbitrary rate while polling happens at a fixed 60Hz, so a
     // tap shorter than one step would otherwise be added and removed between
@@ -84,6 +99,8 @@ export class Input {
       e.preventDefault(); // stop the page scrolling when the player jumps
       if (!e.repeat) this.pending.add(action);
       this.keys.add(action);
+      // Aiming with W/S means the keyboard is steering the gun now.
+      if (action === 'up' || action === 'down') this.pointerActive = false;
     });
 
     target.addEventListener('keyup', (e) => {
@@ -98,7 +115,46 @@ export class Input {
       this.keys.clear();
       this.pad.clear();
       this.touch.clear();
+      this.mouse.clear();
       this.pending.clear();
+    });
+  }
+
+  // Mouse support, bound to the canvas. `viewW`/`viewH` are the internal
+  // resolution: the canvas is CSS-scaled, so client coordinates are mapped
+  // back through its on-screen rectangle.
+  attachPointer(canvas, viewW, viewH) {
+    const toView = (e) => {
+      const r = canvas.getBoundingClientRect();
+      this.pointerX = ((e.clientX - r.left) / r.width) * viewW;
+      this.pointerY = ((e.clientY - r.top) / r.height) * viewH;
+    };
+    window.addEventListener('mousemove', (e) => {
+      toView(e);
+      this.pointerActive = true;
+    });
+    // Listened on the whole window, not just the canvas: in the heat of a
+    // fight a click that lands a few pixels into the letterbox margin should
+    // still fire. Clicks on real page controls (buttons) are left alone.
+    window.addEventListener('mousedown', (e) => {
+      const action = MOUSE_MAP[e.button];
+      if (!action || e.target.closest?.('button')) return;
+      e.preventDefault();
+      toView(e);
+      this.pointerActive = true;
+      this.anyInputHit = true;
+      if (!this.mouse.has(action)) this.pending.add(action);
+      this.mouse.add(action);
+    });
+    // Released anywhere - including outside the canvas after a drag - still
+    // has to let go, or the gun stays aimed/firing forever.
+    window.addEventListener('mouseup', (e) => {
+      const action = MOUSE_MAP[e.button];
+      if (action) this.mouse.delete(action);
+    });
+    // Right button is "aim"; the browser's context menu would swallow it.
+    window.addEventListener('contextmenu', (e) => {
+      if (!e.target.closest?.('button')) e.preventDefault();
     });
   }
 
@@ -109,6 +165,7 @@ export class Input {
   touchDown(action) {
     if (!this.touch.has(action)) this.pending.add(action);
     this.touch.add(action);
+    this.pointerActive = false;
   }
 
   touchUp(action) {
@@ -121,7 +178,7 @@ export class Input {
 
     // A latched press counts as held for this one poll even if the key has
     // already been released, so a very fast tap still produces a press edge.
-    this.actions = new Set([...this.keys, ...this.pad, ...this.touch, ...this.pending]);
+    this.actions = new Set([...this.keys, ...this.mouse, ...this.pad, ...this.touch, ...this.pending]);
     this.pending.clear();
 
     this.justPressed.clear();
@@ -149,6 +206,8 @@ export class Input {
     }
 
     const [lx = 0, ly = 0] = gp.axes;
+    // Any stick or button on a pad hands aiming back to directional input.
+    if (Math.abs(lx) > DEADZONE || Math.abs(ly) > DEADZONE || this.pad.size) this.pointerActive = false;
     if (lx < -DEADZONE) this.pad.add('left');
     else if (lx > DEADZONE) this.pad.add('right');
     if (ly < -DEADZONE) this.pad.add('up');

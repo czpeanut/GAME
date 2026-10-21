@@ -24,6 +24,11 @@ export class Camera {
     this.trauma = 0; // 0..1, decays every frame
     this.shakeX = 0;
     this.shakeY = 0;
+    // Directional kick: a one-off push of the whole view (a gunshot shoves
+    // the frame back opposite the muzzle), springing back to rest. Separate
+    // from trauma, which is random rattling with no direction.
+    this.kickX = 0;
+    this.kickY = 0;
     this.time = 0;
   }
 
@@ -50,6 +55,11 @@ export class Camera {
 
   addTrauma(amount) {
     this.trauma = clamp(this.trauma + amount, 0, 1);
+  }
+
+  kick(dx, dy) {
+    this.kickX += dx;
+    this.kickY += dy;
   }
 
   _focus(target, lookAhead) {
@@ -86,6 +96,11 @@ export class Camera {
     this.y = damp(this.y, this.targetY, target.grounded ? 8 : 5, dt);
     this._clamp();
 
+    // Fast exponential return: the kick is felt for a few frames, not seen
+    // as the camera drifting.
+    this.kickX = damp(this.kickX, 0, 18, dt);
+    this.kickY = damp(this.kickY, 0, 18, dt);
+
     // Shake: trauma^2 gives a punchy falloff, so a big hit reads clearly while
     // small ones stay subtle.
     this.trauma = Math.max(0, this.trauma - dt * 1.6);
@@ -117,10 +132,10 @@ export class Camera {
 
   // Final render offset, rounded to whole pixels to avoid shimmering edges.
   get renderX() {
-    return Math.round(this.x + this.shakeX);
+    return Math.round(this.x + this.shakeX + this.kickX);
   }
   get renderY() {
-    return Math.round(this.y + this.shakeY);
+    return Math.round(this.y + this.shakeY + this.kickY);
   }
 
   // Frustum test so we skip drawing anything off-screen.

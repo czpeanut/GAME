@@ -12,13 +12,16 @@
 //            No aiming, no ramp-up: what you have in your hand is exactly as
 //            accurate as your reach.
 //
-//   ranged - hold to fire repeatedly at `fireRate`. `spreadMax`/`spreadMin`
-//            and `aimRampTime` model an unpracticed shooter: the first shots
-//            after pressing fire scatter across a wide cone, and only
-//            narrow down to something reliably accurate after holding the
-//            trigger down continuously for `aimRampTime` seconds. Letting go
-//            resets it - you have to steady up again, not just once per
-//            fight.
+//   ranged - aim and trigger are separate inputs (right / left mouse
+//            button). Every shot is drawn uniformly from a fan of half-angle
+//            `player.spread` around the aim direction:
+//              - holding aim narrows the fan from `spreadMax` (hip fire, an
+//                unpracticed grip) to `spreadMin` over `aimRampTime` seconds;
+//              - letting go of aim, or moving, widens it again;
+//              - every shot adds `bloom` - recoil throws the aim off, and
+//                the shooter has to settle again before the next one lands.
+//            Shots are hitscan: they land the instant the trigger breaks,
+//            out to `range` pixels, drawn as a brief tracer streak.
 //
 // Damage is intentionally lopsided: melee weapons deal modest damage
 // reflecting what a stick or a knife actually does to a person, while the
@@ -68,16 +71,22 @@ export const WEAPONS = {
     // not feel like "a knife that doesn't need reach".
     damage: 4,
     knockback: 320,
-    bulletSpeed: 900,
-    // Slower than a practiced shooter's cyclic rate on purpose - this is
-    // someone who has picked up a gun, not trained with one.
-    fireRate: 0.4,
-    // Holding fire continuously for this long earns the tight, "aimed" cone.
+    range: 560,
+    // Semi-automatic, and slower than a practiced shooter could manage on
+    // purpose - this is someone who has picked up a gun, not trained with one.
+    fireRate: 0.28,
+    // Holding aim continuously for this long earns the tight, aimed fan.
     aimRampTime: 2.4,
-    spreadMax: 0.5, // ~28.6 degrees half-angle at the moment fire is first pressed
+    spreadMax: 0.5, // ~28.6 degrees half-angle from the hip
     spreadMin: 0.025, // ~1.4 degrees once fully steadied
-    bulletColor: '#fff2c8',
-    bulletGlow: '#ffb44d',
+    bloom: 0.3, // added to the fan by every shot, capped at spreadMax
+    moveSpread: 0.14, // extra half-angle at full running speed
+    // Felt, not just seen: camera kick (px), shake trauma, and how hard the
+    // shot shoves the shooter back.
+    kick: 7,
+    trauma: 0.34,
+    recoil: 150,
+    tracerColor: '#ffd27a',
   },
 };
 

@@ -37,6 +37,7 @@
         background: #080a14;
         box-shadow: 0 0 0 1px #1d2745, 0 20px 70px rgba(0, 0, 0, 0.75);
         touch-action: none;
+        cursor: crosshair;
       }
       #hint {
         position: fixed;
@@ -123,7 +124,7 @@
         right: max(14px, env(safe-area-inset-right));
         bottom: max(14px, env(safe-area-inset-bottom));
         display: grid;
-        grid-template-columns: 58px 58px;
+        grid-template-columns: 58px 58px 58px;
         grid-template-rows: 58px 58px;
         gap: 10px;
       }
@@ -133,20 +134,24 @@
         font-size: 12px;
         font-weight: 700;
       }
-      .tc-interact {
-        grid-column: 1;
-        grid-row: 1;
-      }
-      .tc-dash {
-        grid-column: 2;
-        grid-row: 1;
-      }
-      .tc-fire {
+      .tc-aim {
         grid-column: 1;
         grid-row: 2;
       }
-      .tc-jump {
+      .tc-interact {
         grid-column: 2;
+        grid-row: 1;
+      }
+      .tc-dash {
+        grid-column: 3;
+        grid-row: 1;
+      }
+      .tc-fire {
+        grid-column: 2;
+        grid-row: 2;
+      }
+      .tc-jump {
+        grid-column: 3;
         grid-row: 2;
       }
       .tc-pause {
@@ -162,8 +167,8 @@
   <body>
     <canvas id="game" width="640" height="360"></canvas>
     <div id="hint">
-      A/D move &nbsp;·&nbsp; SPACE jump &nbsp;·&nbsp; J fire &nbsp;·&nbsp; SHIFT
-      dash &nbsp;·&nbsp; ESC pause &nbsp;·&nbsp; M mute &nbsp;·&nbsp; F3 debug
+      A/D move &nbsp;·&nbsp; SPACE jump &nbsp;·&nbsp; LMB / J attack &nbsp;·&nbsp;
+      RMB / U aim &nbsp;·&nbsp; SHIFT dash &nbsp;·&nbsp; ESC pause &nbsp;·&nbsp; M mute
     </div>
     <div id="touch-controls" aria-hidden="true">
       <div class="tc-dpad">
@@ -173,6 +178,7 @@
         <button class="tc-btn tc-down" data-action="down">▼</button>
       </div>
       <div class="tc-actions">
+        <button class="tc-btn tc-aim" data-action="aim">瞄準</button>
         <button class="tc-btn tc-interact" data-action="interact">談</button>
         <button class="tc-btn tc-dash" data-action="dash">衝刺</button>
         <button class="tc-btn tc-fire" data-action="fire">攻擊</button>

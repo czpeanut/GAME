@@ -1,6 +1,6 @@
 // Weapon system tests: melee swings resolve as instant hitbox checks against
-// the world (never a projectile), ranged weapons narrow their spread the
-// longer fire is held and reset the moment it's released, and equipping a
+// the world (never a projectile), firearms aim and fire on separate inputs -
+// aiming narrows the fan, every shot blooms it - and equipping a
 // weapon takes effect on the very next input - no respawn or reconstruction
 // needed, matching the same live-read contract abilities already have.
 
@@ -54,10 +54,9 @@ console.log('\nequipWeapon');
   p.equipWeapon('knife');
   check('equipping changes the weapon', p.weaponId === 'knife');
   p.attackCd = 5;
-  p.aimHoldT = 3;
   p.equipWeapon('pistol');
   check('equipping resets the attack cooldown', p.attackCd === 0);
-  check('equipping resets any in-progress aim', p.aimHoldT === 0);
+  check('equipping a gun starts it at its widest fan', p.spread === WEAPONS.pistol.spreadMax);
   p.equipWeapon('pistol');
   check('re-equipping the same weapon is a harmless no-op', p.weaponId === 'pistol');
 }
@@ -68,7 +67,7 @@ console.log('\nmelee: instant hitbox, not a projectile');
   run(ctx, () => [], 5);
   run(ctx, (f) => (f === 0 ? ['fire'] : []), 1);
   check('a melee press resolves through meleeAttack', ctx.game.meleeHits.length === 1);
-  check('a melee press never spawns a bullet', ctx.game.bullets.length === 0);
+  check('a melee press never fires a shot', ctx.game.shots.length === 0);
 
   const hit = ctx.game.meleeHits[0];
   check('the swing uses the equipped weapon\'s stats', hit.weapon.id === 'fists');
@@ -107,93 +106,147 @@ console.log('\nmelee: respects its own cooldown, not a fixed rate');
     swings === 1, `${swings} swings in 10 frames`);
 }
 
-console.log('\nranged: aim spread narrows the longer fire is held, resets on release');
-{
-  const { p } = makePlayer();
-  p.equipWeapon('pistol');
-  const w = WEAPONS.pistol;
-
-  check('spread starts at maximum with no hold time', p._currentSpread(w) === w.spreadMax);
-
-  p.aimHoldT = w.aimRampTime * 0.5;
-  const mid = p._currentSpread(w);
-  check('spread narrows partway through the ramp',
-    mid < w.spreadMax && mid > w.spreadMin, mid);
-
-  p.aimHoldT = w.aimRampTime * 5; // well past full steadiness
-  check('spread bottoms out at spreadMin, never tighter',
-    Math.abs(p._currentSpread(w) - w.spreadMin) < 1e-9, p._currentSpread(w));
-}
-
-console.log('\nranged: holding fire accumulates aim time; releasing resets it');
-{
+const pistol = WEAPONS.pistol;
+function armed() {
   const ctx = makePlayer();
   ctx.p.equipWeapon('pistol');
-  run(ctx, () => [], 5);
-
-  run(ctx, () => ['fire'], 30); // hold for half a second
-  const heldT = ctx.p.aimHoldT;
-  check('aimHoldT grows while fire is held', heldT > 0.4, heldT.toFixed(2));
-
-  run(ctx, () => [], 2); // release
-  check('releasing fire resets aimHoldT to zero', ctx.p.aimHoldT === 0);
+  run(ctx, () => [], 5); // settle onto the ground
+  return ctx;
 }
 
-console.log('\nranged: shots carry the weapon\'s own damage/speed/knockback, not a fixed default');
+console.log('\nranged: the fan starts wide and narrows only while aiming');
 {
-  const ctx = makePlayer();
-  ctx.p.equipWeapon('pistol');
-  run(ctx, () => [], 5);
-  run(ctx, () => ['fire'], 5); // let a shot actually fire (fireRate cooldown)
-  check('at least one shot was fired', ctx.game.bullets.length > 0, ctx.game.bullets.length);
+  const ctx = armed();
+  check('a freshly drawn gun starts at its widest fan',
+    Math.abs(ctx.p.spread - pistol.spreadMax) < 1e-9, ctx.p.spread);
 
-  const b = ctx.game.bullets.at(-1);
-  check('bullet damage matches the pistol\'s damage stat', b.damage === WEAPONS.pistol.damage);
-  check('bullet speed matches the pistol\'s bulletSpeed stat', b.speed === WEAPONS.pistol.bulletSpeed);
-  check('bullet knockback matches the pistol\'s knockback stat', b.knockback === WEAPONS.pistol.knockback);
+  run(ctx, () => ['aim'], Math.round(pistol.aimRampTime * 0.5 * 60));
+  check('half the ramp time of aiming lands partway',
+    ctx.p.spread < pistol.spreadMax && ctx.p.spread > pistol.spreadMin, ctx.p.spread.toFixed(3));
+
+  run(ctx, () => ['aim'], Math.round(pistol.aimRampTime * 60));
+  check('aiming for the full ramp time bottoms out at spreadMin, never tighter',
+    Math.abs(ctx.p.spread - pistol.spreadMin) < 1e-6, ctx.p.spread.toFixed(4));
+  check('steadiness reads 1 when fully steadied', ctx.p.steadiness() > 0.999);
+
+  run(ctx, () => [], 60);
+  check('letting go of aim widens the fan back out (faster than it narrowed)',
+    Math.abs(ctx.p.spread - pistol.spreadMax) < 1e-6, ctx.p.spread.toFixed(3));
 }
 
-console.log('\nranged: an early (unsteadied) shot can land far off the aimed direction');
+console.log('\nranged: aim and trigger are separate inputs');
 {
-  // Fire the instant fire is pressed (aimHoldT ~= 0, so spread = spreadMax)
-  // and confirm the shot's actual direction can differ meaningfully from
-  // dead-ahead - proof the "unpracticed shooter" spread is actually applied
-  // to the fired bullet, not just displayed.
-  let sawScatter = false;
-  for (let trial = 0; trial < 40 && !sawScatter; trial++) {
-    const ctx = makePlayer();
-    ctx.p.equipWeapon('pistol');
-    run(ctx, () => [], 5);
-    run(ctx, (f) => (f === 0 ? ['fire'] : []), 1);
-    const b = ctx.game.bullets[0];
-    if (!b) continue;
-    const angle = Math.atan2(b.dy, b.dx);
-    if (Math.abs(angle) > 0.05) sawScatter = true;
+  const ctx = armed();
+  run(ctx, () => ['aim'], 90);
+  check('holding aim alone never fires', ctx.game.shots.length === 0);
+  check('holding aim alone never swings either', ctx.game.meleeHits.length === 0);
+
+  run(ctx, () => ['aim', 'fire'], 1);
+  check('a trigger pull while aiming fires one shot', ctx.game.shots.length === 1);
+  check('the shot carries the equipped weapon', ctx.game.shots[0].weapon.id === 'pistol');
+
+  run(ctx, () => ['aim', 'fire'], 60);
+  check('holding the trigger does not auto-fire (semi-automatic)',
+    ctx.game.shots.length === 1, `${ctx.game.shots.length} shots`);
+}
+
+console.log('\nranged: every shot blooms the fan, then aiming tightens it again');
+{
+  const ctx = armed();
+  run(ctx, () => ['aim'], Math.round(pistol.aimRampTime * 60) + 10);
+  const before = ctx.p.spread;
+  run(ctx, () => ['aim', 'fire'], 1);
+  const after = ctx.p.spread;
+  check('a shot widens the fan by about `bloom`',
+    Math.abs(after - before - pistol.bloom) < 0.02, `${before.toFixed(3)} -> ${after.toFixed(3)}`);
+
+  run(ctx, () => ['aim'], 60);
+  check('continuing to aim narrows it again after the shot',
+    ctx.p.spread < after - 0.1, ctx.p.spread.toFixed(3));
+
+  ctx.p.spread = pistol.spreadMax;
+  run(ctx, () => [], pistol.fireRate * 60 + 2);
+  run(ctx, () => ['fire'], 1);
+  check('bloom never pushes the fan past spreadMax', ctx.p.spread <= pistol.spreadMax + 1e-9);
+}
+
+console.log('\nranged: rate of fire is capped, but an early pull is buffered');
+{
+  const ctx = armed();
+  // Three quick taps inside one fireRate window.
+  run(ctx, (f) => (f % 4 === 0 ? ['fire'] : []), 12);
+  check('taps faster than fireRate produce a single shot', ctx.game.shots.length === 1,
+    `${ctx.game.shots.length}`);
+
+  const shots = ctx.game.shots.length;
+  run(ctx, () => [], Math.round(pistol.fireRate * 60) - 8);
+  run(ctx, (f) => (f === 0 ? ['fire'] : []), 12);
+  check('a pull just before the cooldown ends still fires when it does',
+    ctx.game.shots.length === shots + 1);
+}
+
+console.log('\nranged: shots land inside the fan');
+{
+  const ctx = armed();
+  run(ctx, () => ['aim'], Math.round(pistol.aimRampTime * 60) + 10);
+  run(ctx, () => ['aim', 'fire'], 1);
+  const a = ctx.game.shots[0].angle;
+  check('a steadied shot lands within the tight spreadMin fan',
+    Math.abs(a - ctx.p.aimAngle) <= pistol.spreadMin + 1e-9, a.toFixed(4));
+
+  let maxDev = 0;
+  let outside = 0;
+  for (let i = 0; i < 40; i++) {
+    const c = armed();
+    run(c, () => ['fire'], 1);
+    const dev = Math.abs(c.game.shots[0].angle - c.p.aimAngle);
+    maxDev = Math.max(maxDev, dev);
+    if (dev > pistol.spreadMax + 1e-9) outside++;
   }
-  check('an unsteadied first shot visibly scatters from dead-ahead across repeated attempts',
-    sawScatter);
+  check('hip-fired shots visibly scatter', maxDev > 0.15, maxDev.toFixed(3));
+  check('...but never outside the widest fan', outside === 0);
 }
 
-console.log('\nranged: a fully steadied shot is close to dead-on');
+console.log('\nranged: moving or jumping keeps the fan from fully tightening');
+{
+  const ctx = armed();
+  run(ctx, () => ['aim', 'right'], 240);
+  check('running while aiming stays wider than standing still',
+    ctx.p.spread > pistol.spreadMin + pistol.moveSpread * 0.5, ctx.p.spread.toFixed(3));
+}
+
+console.log('\nranged: the mouse cursor steers the gun');
+{
+  const ctx = armed();
+  ctx.game.camera.x = 0;
+  ctx.game.camera.y = 0;
+  ctx.input.pointerActive = true;
+  // Cursor up and to the left of the player.
+  ctx.input.pointerX = ctx.p.centerX - 100;
+  ctx.input.pointerY = ctx.p.gunY - 100;
+  run(ctx, () => ['aim'], 1);
+  check('the aim angle points at the cursor',
+    Math.abs(ctx.p.aimAngle - Math.atan2(-100, -100)) < 0.05, ctx.p.aimAngle.toFixed(3));
+  check('aiming turns the body to face the cursor', ctx.p.facing === -1);
+}
+
+console.log('\nmelee ignores aim');
 {
   const ctx = makePlayer();
-  ctx.p.equipWeapon('pistol');
-  run(ctx, () => [], 5);
-  ctx.p.aimHoldT = WEAPONS.pistol.aimRampTime * 3; // already steadied
-  run(ctx, (f) => (f === 0 ? ['fire'] : []), 1);
-  const b = ctx.game.bullets[0];
-  check('a steadied shot fires', !!b);
-  const angle = Math.atan2(b.dy, b.dx);
-  check('a steadied shot lands within the tight spreadMin cone',
-    Math.abs(angle) <= WEAPONS.pistol.spreadMin + 0.01, angle.toFixed(3));
+  ctx.p.equipWeapon('stick');
+  run(ctx, () => ['aim'], 30);
+  check('holding aim with a melee weapon does nothing',
+    ctx.game.meleeHits.length === 0 && ctx.game.shots.length === 0 && !ctx.p.isAiming);
 }
 
 console.log('\nweapon persists across respawn but not across a fresh Player');
 {
   const { p } = makePlayer();
   p.equipWeapon('pistol');
+  p.spread = WEAPONS.pistol.spreadMin;
   p.respawn(0, 0);
   check('dying and respawning does not strip the weapon', p.weaponId === 'pistol');
+  check('...but the steadied aim does not survive it', p.spread === WEAPONS.pistol.spreadMax);
 
   const fresh = makePlayer().p;
   check('a newly constructed player starts unarmed regardless', fresh.weaponId === 'fists');

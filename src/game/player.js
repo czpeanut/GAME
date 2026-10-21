@@ -61,11 +61,15 @@ export class Player {
     // walking over it (see WeaponPickup / WorldScene._checkPickups).
     this.weaponId = 'fists';
     this.attackCd = 0;
-    // How long `fire` has been held continuously with a ranged weapon out -
-    // this is the whole "unpracticed shooter" mechanic: the longer it's held,
-    // the tighter the spread, and letting go resets it.
-    this.aimHoldT = 0;
+    // Firearm state. `spread` is the half-angle of the fan every shot is
+    // drawn from - the whole "unpracticed shooter" mechanic lives in how it
+    // narrows while aiming and blooms with every shot (see _updateSpread).
+    this.spread = 0;
+    this.aimAngle = 0; // radians, where the gun is pointing
     this.isAiming = false;
+    this.fireBufferT = 0; // a trigger pull slightly early still fires
+    this.gunKick = 0; // 1 right after a shot, decays - visual recoil
+    this.fanFlash = 0; // briefly shows the fan after a hip-fired shot
     this.meleeSwingT = 0;
     this.meleeSwingDir = 1;
 
@@ -114,14 +118,23 @@ export class Player {
     if (id === this.weaponId) return;
     this.weaponId = id;
     this.attackCd = 0;
-    this.aimHoldT = 0;
+    this._resetAim();
   }
 
-  // Shared by the firing logic and the reticle renderer, so what the player
-  // sees is exactly what determines where the next shot goes.
-  _currentSpread(w) {
-    const steadiness = clamp(this.aimHoldT / w.aimRampTime, 0, 1);
-    return lerp(w.spreadMax, w.spreadMin, steadiness);
+  // A freshly drawn gun starts at its widest fan: steadiness is earned by
+  // aiming, never carried over from a previous weapon or life.
+  _resetAim() {
+    const w = this.weapon;
+    this.spread = w.type === 'ranged' ? w.spreadMax : 0;
+    this.isAiming = false;
+    this.fireBufferT = 0;
+  }
+
+  // 0 = the widest fan, 1 = fully steadied. Read by the fan renderer and the
+  // HUD, so what the player sees is exactly what the next shot is drawn from.
+  steadiness(w = this.weapon) {
+    if (w.type !== 'ranged') return 0;
+    return clamp((w.spreadMax - this.spread) / (w.spreadMax - w.spreadMin), 0, 1);
   }
 
   update(dt, input, map) {
@@ -167,6 +180,9 @@ export class Player {
     this.wallJumpLock -= dt;
     this.hurtT -= dt;
     this.muzzleFlash -= dt;
+    this.fireBufferT -= dt;
+    this.gunKick = Math.max(0, this.gunKick - dt * 7);
+    this.fanFlash -= dt;
     if (this.dashT > 0) this.dashT -= dt;
     if (this.wallStick > 0) this.wallStick -= dt;
     if (this.meleeSwingT > 0) this.meleeSwingT -= dt;
@@ -380,7 +396,6 @@ export class Player {
     const w = this.weapon;
     if (w.type === 'melee') {
       this.isAiming = false;
-      this.aimHoldT = 0;
       this._handleMelee(input, w);
     } else {
       this._handleRanged(dt, input, w);
@@ -427,74 +442,114 @@ export class Player {
     );
   }
 
-  // Holding fire both aims and fires: `aimHoldT` accumulates for as long as
-  // fire stays held (independent of the per-shot cooldown, so it measures
-  // "how long have you been steadying up", not "how many shots landed") and
-  // narrows the spread each shot is drawn from. Letting go resets it - the
-  // player has to hold their aim through a fight, not just once at the start
-  // of it.
+  // Aim and trigger are separate: `aim` (right mouse button) steadies the
+  // fan, `fire` (left button) pulls the trigger - semi-automatic, one shot
+  // per pull. The shot itself is hitscan: it lands the instant it is fired,
+  // drawn as a tracer streak rather than a projectile you could watch fly.
   _handleRanged(dt, input, w) {
-    const held = input.down('fire');
-    this.isAiming = held;
+    this.isAiming = input.down('aim');
+    this.aimAngle = this._aimAngle(input);
 
-    if (held) this.aimHoldT += dt;
-    else this.aimHoldT = 0;
+    // While aiming or shooting, the body turns to face the gun.
+    const dirX = Math.cos(this.aimAngle);
+    if ((this.isAiming || input.down('fire')) && Math.abs(dirX) > 0.05 && this.dashT <= 0) {
+      this.facing = dirX > 0 ? 1 : -1;
+    }
 
-    if (!held || this.attackCd > 0) return;
+    this._updateSpread(dt, w);
+
+    if (input.pressed('fire')) this.fireBufferT = 0.12;
+    if (this.fireBufferT <= 0 || this.attackCd > 0) return;
+    this.fireBufferT = 0;
     this.attackCd = w.fireRate;
+    this._shoot(w);
+  }
 
-    const spread = this._currentSpread(w);
-
-    // Aim: up/down override horizontal, matching twin-stick-lite conventions.
+  // Mouse: straight at the cursor. Otherwise the same eight directions the
+  // keyboard/pad always had - facing, with up/down overriding.
+  _aimAngle(input) {
+    const cam = this.game.camera;
+    if (input.pointerActive && cam && cam.x !== undefined) {
+      const tx = cam.x + input.pointerX;
+      const ty = cam.y + input.pointerY;
+      return Math.atan2(ty - this.gunY, tx - this.centerX);
+    }
     let dx = this.facing;
     let dy = 0;
     if (this.aimY !== 0) {
       dy = this.aimY;
       dx = input.axisX !== 0 ? this.facing : 0;
-      if (dx !== 0) {
-        const len = Math.SQRT1_2;
-        dx *= len;
-        dy *= len;
-      }
     }
+    return Math.atan2(dy, dx);
+  }
 
-    // The muzzle sits at the aimed direction; the actual shot scatters
-    // within `spread` around it - an unsteady hand, not a moving gun.
-    const angle = Math.atan2(dy, dx) + rand(-spread, spread);
-    const fdx = Math.cos(angle);
-    const fdy = Math.sin(angle);
+  // Shoulder height: where the gun is held and every shot starts from.
+  get gunY() {
+    return this.centerY - 2;
+  }
 
-    const muzzleX = this.centerX + dx * 16;
-    const muzzleY = this.centerY + dy * 16 - 2;
+  // The fan drifts toward a target half-angle: tight while aiming, wide from
+  // the hip, wider still on the move or in the air. Narrowing takes the full
+  // `aimRampTime`; widening is three times faster - losing your aim is quick,
+  // earning it back is not. Each shot's bloom is added on top in _shoot().
+  _updateSpread(dt, w) {
+    const moving = clamp(Math.abs(this.body.vx) / PLAYER.runSpeed, 0, 1);
+    const target = Math.min(
+      w.spreadMax,
+      (this.isAiming ? w.spreadMin : w.spreadMax) + w.moveSpread * moving + (this.grounded ? 0 : w.moveSpread)
+    );
+    const rate = (w.spreadMax - w.spreadMin) / w.aimRampTime;
+    if (this.spread > target) this.spread = Math.max(target, this.spread - rate * dt);
+    else this.spread = Math.min(target, this.spread + rate * 3 * dt);
+  }
 
-    this.game.spawnBullet(muzzleX, muzzleY, fdx, fdy, {
-      damage: w.damage,
-      speed: w.bulletSpeed,
-      color: w.bulletColor,
-      glow: w.bulletGlow,
-      knockback: w.knockback,
-    });
-    this.muzzleFlash = 0.06;
+  _shoot(w) {
+    const angle = this.aimAngle + rand(-this.spread, this.spread);
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const muzzleX = this.centerX + Math.cos(this.aimAngle) * 16;
+    const muzzleY = this.gunY + Math.sin(this.aimAngle) * 16;
 
-    // Recoil, and a little extra kick when firing straight down so shooting
-    // downward doubles as a small height boost.
-    this.body.vx -= dx * PLAYER.recoil * (this.grounded ? 0.25 : 1);
-    if (dy > 0 && !this.grounded) this.body.vy -= 60;
+    this.game.fireHitscan(muzzleX, muzzleY, angle, w);
 
-    // A gun should feel like it hits harder than its own recoil animation -
-    // more shake than the old fixed-damage bullet ever needed.
-    this.game.camera.addTrauma(0.1);
+    // Recoil: the fan blooms, the shooter is shoved back (more in the air,
+    // where nothing braces them), and firing downward mid-air lifts a little.
+    this.spread = Math.min(w.spreadMax, this.spread + w.bloom);
+    this.body.vx -= cos * w.recoil * (this.grounded ? 0.35 : 1);
+    if (sin > 0.5 && !this.grounded) this.body.vy -= sin * 140;
+
+    // Felt in the whole frame: a directional kick opposite the muzzle plus
+    // rattling trauma - far beyond anything a melee swing produces.
+    this.game.camera.kick?.(-cos * w.kick, -sin * w.kick);
+    this.game.camera.addTrauma(w.trauma);
+    this.gunKick = 1;
+    this.muzzleFlash = 0.07;
+    this.fanFlash = 0.5;
     this.game.audio.shoot();
-    this.game.particles.burst(muzzleX, muzzleY, 7, {
-      color: [COLORS.bullet, COLORS.bulletGlow],
-      speedMin: 40,
-      speedMax: 180,
+
+    this.game.particles.burst(muzzleX, muzzleY, 10, {
+      color: ['#ffffff', '#ffe08a', '#ff9a3c'],
+      speedMin: 80,
+      speedMax: 260,
       angle,
-      spread: 0.3,
-      lifeMin: 0.06,
-      lifeMax: 0.2,
+      spread: 0.35,
+      lifeMin: 0.05,
+      lifeMax: 0.14,
+      shape: 'streak',
       sizeMin: 1,
       sizeMax: 3,
+    });
+    // A puff of gun smoke that lingers after the flash is gone.
+    this.game.particles.burst(muzzleX, muzzleY, 4, {
+      color: ['rgba(200,190,175,0.5)', 'rgba(150,140,130,0.4)'],
+      speedMin: 10,
+      speedMax: 40,
+      angle: -Math.PI / 2,
+      spread: 1.2,
+      lifeMin: 0.3,
+      lifeMax: 0.6,
+      sizeMin: 2,
+      sizeMax: 4,
     });
   }
 
@@ -654,8 +709,8 @@ export class Player {
     this.trail.length = 0;
     // The weapon itself is not reset here - dying does not make you drop
     // whatever you picked up. Only the in-progress aim state is cleared, so a
-    // death mid-aim does not carry a phantom steadied cone into the respawn.
-    this.aimHoldT = 0;
+    // death mid-aim does not carry a phantom steadied fan into the respawn.
+    this._resetAim();
     this.attackCd = 0;
   }
 
@@ -707,9 +762,9 @@ export class Player {
 
     ctx.restore();
 
-    // Outside the dash-glow save/restore - the reticle is a world-space aim
+    // Outside the dash-glow save/restore - the aim fan is a world-space
     // indicator, not part of the character's own shadow/glow treatment.
-    this._renderAimReticle(ctx);
+    this._renderAimFan(ctx);
   }
 
   // Sprite path. The transform pivots on the feet so squash/stretch — which is
@@ -763,20 +818,33 @@ export class Player {
     ctx.fillRect(eyeX + 1, y + h * 0.16, 3, 4);
   }
 
+  // A short star of light at the muzzle - two crossed spikes plus a core,
+  // brighter and larger than anything else the player emits.
   _renderMuzzleFlash(ctx) {
     if (this.muzzleFlash <= 0) return;
-    let dx = this.facing;
-    let dy = 0;
-    if (this.aimY !== 0) {
-      dy = this.aimY;
-      dx = 0;
-    }
-    ctx.fillStyle = COLORS.bullet;
-    ctx.shadowColor = COLORS.bulletGlow;
-    ctx.shadowBlur = 12;
+    const a = this.aimAngle;
+    const x = this.centerX + Math.cos(a) * 18;
+    const y = this.gunY + Math.sin(a) * 18;
+    const k = this.muzzleFlash / 0.07;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(a);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.shadowColor = '#ffb44d';
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = `rgba(255,190,90,${0.9 * k})`;
     ctx.beginPath();
-    ctx.arc(this.body.centerX + dx * 16, this.body.centerY + dy * 16, 5, 0, Math.PI * 2);
+    ctx.moveTo(-2, -4);
+    ctx.lineTo(16 * k + 6, 0);
+    ctx.lineTo(-2, 4);
+    ctx.closePath();
     ctx.fill();
+    ctx.fillRect(1, -7 * k, 2, 14 * k);
+    ctx.fillStyle = `rgba(255,255,255,${k})`;
+    ctx.beginPath();
+    ctx.arc(2, 0, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   // Draws whatever is currently in hand. Fists draw nothing extra (the
@@ -789,19 +857,21 @@ export class Player {
     const cy = this.body.centerY;
 
     if (w.type === 'ranged') {
-      let dx = this.facing;
-      let dy = 0;
-      if (this.aimY !== 0) {
-        dy = this.aimY;
-        dx = 0;
-      }
+      // Pointed along the aim; flipped vertically when aiming left so the
+      // grip stays underneath. Right after a shot it snaps back toward the
+      // shoulder and tips muzzle-up, then settles.
+      const left = Math.cos(this.aimAngle) < 0;
       ctx.save();
-      ctx.translate(cx, cy + 2);
-      ctx.rotate(Math.atan2(dy, dx));
-      ctx.fillStyle = '#2a2a30';
-      ctx.fillRect(4, -2, 12, 4);
-      ctx.fillStyle = '#c7d0da';
-      ctx.fillRect(14, -1, 3, 2);
+      ctx.translate(cx, this.gunY);
+      ctx.rotate(this.aimAngle);
+      if (left) ctx.scale(1, -1);
+      ctx.rotate(-this.gunKick * 0.35);
+      ctx.translate(-this.gunKick * 4, 0);
+      ctx.fillStyle = '#1d1d22';
+      ctx.fillRect(4, -2, 13, 4); // slide/barrel
+      ctx.fillRect(5, 1, 4, 5); // grip
+      ctx.fillStyle = '#6b7380';
+      ctx.fillRect(5, -2, 11, 1); // top highlight
       ctx.restore();
       return;
     }
@@ -836,35 +906,49 @@ export class Player {
     ctx.restore();
   }
 
-  // A shrinking ring showing roughly where the next shot will land - the
-  // visible half of the aim-ramp mechanic. Only shown while actively holding
-  // fire with a ranged weapon; there is nothing to steady otherwise.
-  _renderAimReticle(ctx) {
+  // The aim fan: every shot is drawn uniformly from inside this sector, so
+  // it is the honest picture of where the next round can go. Shown solid
+  // while aiming, and briefly after a hip-fired shot so the bloom is visible
+  // even when not aiming. Colour runs from orange (wide) to green (steady).
+  _renderAimFan(ctx) {
     const w = this.weapon;
-    if (w.type !== 'ranged' || !this.isAiming) return;
+    if (w.type !== 'ranged' || !this.alive) return;
+    const alpha = this.isAiming ? 1 : clamp(this.fanFlash / 0.5, 0, 1) * 0.5;
+    if (alpha <= 0) return;
 
-    let dx = this.facing;
-    let dy = 0;
-    if (this.aimY !== 0) {
-      dy = this.aimY;
-      dx = 0;
-    }
-    const spread = this._currentSpread(w);
-    const dist = 70;
-    const cx = this.centerX + dx * dist;
-    const cy = this.centerY + dy * dist - 2;
-    const radius = Math.max(3, Math.tan(spread) * dist);
-    const steady = spread <= w.spreadMin * 1.5;
+    const t = this.steadiness(w);
+    const hue = 28 + 100 * t;
+    const ox = this.centerX;
+    const oy = this.gunY;
+    const r = 120;
+    const a0 = this.aimAngle - this.spread;
+    const a1 = this.aimAngle + this.spread;
 
     ctx.save();
-    ctx.globalAlpha = 0.85;
-    ctx.strokeStyle = steady ? '#8fffa0' : '#ffe9a8';
+    ctx.globalAlpha = alpha;
+    const g = ctx.createRadialGradient(ox, oy, 12, ox, oy, r);
+    g.addColorStop(0, `hsla(${hue},100%,65%,0.28)`);
+    g.addColorStop(1, `hsla(${hue},100%,65%,0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.arc(ox, oy, r, a0, a1);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = `hsla(${hue},100%,70%,0.75)`;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    for (const a of [a0, a1]) {
+      ctx.moveTo(ox + Math.cos(a) * 14, oy + Math.sin(a) * 14);
+      ctx.lineTo(ox + Math.cos(a) * r, oy + Math.sin(a) * r);
+    }
     ctx.stroke();
+    // Centre tick at the end of the aim line.
+    const ex = ox + Math.cos(this.aimAngle) * r;
+    const ey = oy + Math.sin(this.aimAngle) * r;
     ctx.fillStyle = ctx.strokeStyle;
-    ctx.fillRect(cx - 1, cy - 1, 2, 2);
+    ctx.fillRect(ex - 1, ey - 1, 2, 2);
     ctx.restore();
   }
 }

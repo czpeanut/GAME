@@ -87,6 +87,10 @@ export class Game {
     this.world.spawnBullet(x, y, dx, dy, opts);
   }
 
+  fireHitscan(x, y, angle, weapon) {
+    return this.world.fireHitscan(x, y, angle, weapon);
+  }
+
   meleeAttack(rect, weapon, facingDir) {
     this.world.meleeAttack(rect, weapon, facingDir);
   }

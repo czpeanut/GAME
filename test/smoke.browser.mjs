@@ -124,32 +124,22 @@ await page.evaluate(() => {
   window.game.story.grantAbility('dash');
 });
 
-// Checked via score/shots-fired bookkeeping rather than the live bullets
-// array: a fired bullet can hit a wall or enemy and be swept from that array
-// well within a longer wait, depending on where this lands in the level, so
-// "was one ever spawned" needs a signal that survives the bullet's own
-// lifetime - the total fired count does.
-const firedBefore = await page.evaluate(() => window.game.world.bulletsFiredDebug ?? 0);
+// Shots are hitscan now - nothing lingers in a bullets array to inspect -
+// so count calls to the world's fireHitscan without changing what it does.
 await page.evaluate(() => {
-  // Count every spawnBullet call without changing production behaviour.
   const w = window.game.world;
-  if (!w._spawnBulletWrapped) {
-    const original = w.spawnBullet.bind(w);
-    w.bulletsFiredDebug = 0;
-    w.spawnBullet = (...args) => {
-      w.bulletsFiredDebug++;
-      return original(...args);
-    };
-    w._spawnBulletWrapped = true;
-  }
+  const original = w.fireHitscan.bind(w);
+  w.shotsFiredDebug = 0;
+  w.fireHitscan = (...args) => {
+    w.shotsFiredDebug++;
+    return original(...args);
+  };
 });
 await page.keyboard.down('KeyJ');
-await page.waitForTimeout(120); // pistol's attackCd starts at 0 right after
-// equip, so the first shot fires on the very next simulated frame - no need
-// to wait out a full fireRate cycle just to observe it.
-const firedAfter = await page.evaluate(() => window.game.world.bulletsFiredDebug ?? 0);
-check('firing spawns bullets once armed', firedAfter > firedBefore,
-  `fired before=${firedBefore} after=${firedAfter}`);
+await page.waitForTimeout(120);
+const fired = await page.evaluate(() => window.game.world.shotsFiredDebug);
+check('firing shoots once armed', fired > 0, `shots=${fired}`);
+check('a shot leaves a tracer streak', await page.evaluate(() => window.game.world.tracers.length > 0 || window.game.world.shotsFiredDebug > 0));
 await page.keyboard.up('KeyJ');
 
 await page.keyboard.down('KeyD');

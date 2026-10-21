@@ -15,10 +15,14 @@ export function stubGame() {
     // Any audio method resolves to a no-op, so adding a new sound to the game
     // never breaks the tests.
     audio: new Proxy({}, { get: () => () => {} }),
-    camera: { addTrauma() {} },
+    camera: { addTrauma() {}, kick() {} },
     freeze() {},
     bullets: [],
     spawnBullet(x, y, dx, dy, opts) { this.bullets.push({ x, y, dx, dy, ...opts }); },
+    // Hitscan shots, recorded instead of resolved: origin, final angle (with
+    // spread applied) and the weapon that fired.
+    shots: [],
+    fireHitscan(x, y, angle, weapon) { this.shots.push({ x, y, angle, weapon }); return null; },
     meleeHits: [],
     meleeAttack(rect, weapon, dir) { this.meleeHits.push({ rect, weapon, dir }); },
     deaths: 0,

@@ -132,7 +132,7 @@ export class HUD {
     ctx.fillText(w.name, x, y + 6);
 
     if (w.type === 'ranged' && p.isAiming) {
-      const steady = 1 - clamp((p._currentSpread(w) - w.spreadMin) / (w.spreadMax - w.spreadMin), 0, 1);
+      const steady = p.steadiness(w);
       const barY = y + 11;
       const barW = 66;
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
@@ -197,7 +197,7 @@ export class HUD {
       `dash  ${p.dashT.toFixed(2)} cd ${Math.max(0, p.dashCd).toFixed(2)}`,
       `ents  e:${game.enemies.length} b:${game.bullets.length} p:${game.particles.activeCount}`,
       `abil  dash:${p.abilities.dash ? 1 : 0} djmp:${p.abilities.doubleJump ? 1 : 0} wall:${p.abilities.wallJump ? 1 : 0}`,
-      `wpn   ${p.weaponId}  aim ${p.aimHoldT.toFixed(2)}`,
+      `wpn   ${p.weaponId}  spread ${p.spread.toFixed(3)}${p.isAiming ? ' AIM' : ''}`,
     ];
     ctx.font = '8px monospace';
     ctx.textAlign = 'left';

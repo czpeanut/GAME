@@ -31,7 +31,8 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 | --- | --- | --- |
 | 移動 | `A` `D` / 方向鍵 | 左類比 / 十字鍵 |
 | 跳躍 | `Space` / `K` | A |
-| 攻擊／開火 | `J` / `Z` | X / RT |
+| 攻擊／開火 | 滑鼠左鍵 / `J` / `Z` | X / RT |
+| 槍械瞄準 | 滑鼠右鍵（按住）/ `U` | LT |
 | 衝刺 | `Shift` / `L` | B / RB |
 | 對話／互動 | `E` | Y |
 | 暫停 | `Esc` / `P` | Start |
@@ -39,10 +40,11 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 | 除錯資訊 | `F3` | — |
 
 - **可變跳躍高度**：按住跳得高，輕點跳得低。
-- **攻擊行為依武器而定**：手上是近戰武器（拳頭/棍棒/刀具）時，`J` 是一次
-  有冷卻時間的揮砍；手上是槍械時，`J` 是持續開火，按住不放會逐漸穩定彈著
-  （見「武器系統」）。
-- **瞄準方向**：攻擊時同時按住 `W`/`S`（上/下）可改變方向，含八方向斜射。
+- **攻擊行為依武器而定**：手上是近戰武器（拳頭/棍棒/刀具）時，左鍵是一次
+  有冷卻時間的揮砍；手上是槍械時，**右鍵按住瞄準、左鍵扣扳機**（半自動，
+  一按一發，見「武器系統」）。
+- **瞄準方向**：用滑鼠時槍口直接指向游標；用鍵盤/手把時，按住 `W`/`S`
+  （上/下）改變方向，含八方向斜射。
 - **踩踏**：從高處落下踩到敵人可造成傷害並彈起。
 - **觸控裝置**：在手機／平板上開啟時會自動偵測觸控並顯示畫面上的虛擬按鍵
   （左下十字方向鍵、右下攻擊/跳躍/衝刺/互動鍵、右上暫停），滑鼠與鍵盤
@@ -55,7 +57,7 @@ npm start          # 啟動本機伺服器，開啟 http://localhost:8080
 `src/engine/touch-controls.js` 在偵測到粗指標裝置（`matchMedia('(pointer: coarse)')`
 或 `'ontouchstart' in window`）時，自動顯示 `index.html` 裡 `#touch-controls`
 的畫面按鍵——左下十字方向鍵（含上/下，對應瞄準方向與對話選項切換）、
-右下四顆動作鍵（互動/衝刺/攻擊/跳躍），右上一顆暫停鍵。滑鼠與鍵盤裝置
+右下五顆動作鍵（瞄準/互動/衝刺/攻擊/跳躍），右上一顆暫停鍵。滑鼠與鍵盤裝置
 永遠看不到這層 UI，也不會載入任何監聽器。
 
 按鍵透過 `Input.touchDown(action)` / `touchUp(action)` 餵給與鍵盤、手把
@@ -189,8 +191,9 @@ export const WEAPONS = {
   fists:  { type: 'melee',  damage: 1, range: 14, cooldown: 0.24, knockback: 70  },
   stick:  { type: 'melee',  damage: 1, range: 24, cooldown: 0.32, knockback: 160 },
   knife:  { type: 'melee',  damage: 2, range: 17, cooldown: 0.26, knockback: 90  },
-  pistol: { type: 'ranged', damage: 4, knockback: 320, bulletSpeed: 900, fireRate: 0.4,
-            aimRampTime: 2.4, spreadMax: 0.5, spreadMin: 0.025 },
+  pistol: { type: 'ranged', damage: 4, knockback: 320, range: 560, fireRate: 0.28,
+            aimRampTime: 2.4, spreadMax: 0.5, spreadMin: 0.025, bloom: 0.3,
+            moveSpread: 0.14, kick: 7, trauma: 0.34, recoil: 150 },
 };
 ```
 
@@ -206,21 +209,25 @@ export const WEAPONS = {
 
 ### 槍械：瞄準會抖，穩住才準
 
-手槍不是按下就打死打準——這是刻意還原一個不熟練的人第一次用槍的手感：
+手槍不是按下就打死打準——這是刻意還原一個不熟練的人用槍的手感。瞄準和扣扳機
+是兩個分開的動作：
 
-- 按住開火鍵才會持續瞄準，`player.aimHoldT` 從 0 開始累積；放開立刻歸零，
-  下次要重新穩定。
-- 彈著點的擴散角度（`spread`）隨 `aimHoldT` 從 `spreadMax`（剛舉槍，很亂）
-  線性收斂到 `spreadMin`（完全穩定），收斂時間是武器的 `aimRampTime`
-  （手槍是 2.4 秒）——這也是「兩三秒後才穩定」這個設計要求的直接實作。
-  每次實際擊發的子彈方向，都是瞄準方向疊加當下 `spread` 算出的隨機角度，
-  不只是畫面上好看，真的會偏。
-- 畫面上有一個會隨穩定度縮小的準星圓圈（橘→綠），HUD 也有一條穩定度量表，
-  讓玩家看得到自己「還沒穩」。
-- 傷害、擊退、子彈速度都大幅高於近戰武器（見上表），並搭配更強的畫面震動、
-  更沉的槍聲低頻音（`src/engine/audio.js` 的 `shoot()`）——真實世界裡槍械
-  對肉搏武器的致死力差距，在手感上刻意做出對應的落差，而不是數值上小幅
-  領先而已。
+- **扇形**：每一發的方向，都是從槍口前方一個半角為 `player.spread` 的扇形裡
+  均勻隨機取一個角度。畫面上畫出來的扇形就是真正的判定範圍，不是裝飾。
+- **右鍵瞄準**：按住時扇形從 `spreadMax`（腰射，很亂）線性收窄到 `spreadMin`
+  （完全穩定），需要 `aimRampTime`（手槍 2.4 秒）。顏色由橘轉綠，HUD 也有
+  穩定度量表。放開右鍵扇形會以三倍速度張開；移動或跳躍中扇形收不到最窄。
+- **左鍵射擊**：半自動，一按一發。每一發都讓扇形擴張 `bloom`——後座力把準心
+  甩開，要再穩一下下一發才會準；連續亂扣只會越打越散。
+- **瞬間命中、一道火光**：子彈不是會飛的物件，而是 hitscan——扣下的瞬間沿
+  射線找出第一個擋到的牆或敵人（最遠 `range`），畫一道約 0.1 秒的火光彈道
+  （橘色光暈＋白熱核心，用加色混合疊亮）。打到敵人會有短暫的 hit-stop 與噴濺，
+  打到牆會濺出火花和水泥粉塵。
+- **後座力與畫面反應**：每一發整個畫面會往槍口反方向「頓」一下（`camera.kick`，
+  方向性位移、快速彈回），加上隨機震動（`trauma`），人物被往後推，槍枝往
+  肩膀方向縮並槍口上揚，然後才回位——比任何近戰攻擊都重得多。
+- 傷害、擊退都大幅高於近戰武器（見上表），搭配更沉的槍聲（尖銳爆裂聲＋
+  低頻重擊＋廢墟回音，`src/engine/audio.js` 的 `shoot()`）。
 
 ### 在關卡裡放武器
 
@@ -445,7 +452,7 @@ npm test               # 全部單元測試（純 Node，無需瀏覽器）
 npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，且伺服器執行中）
 ```
 
-`npm test` 會執行 `test/` 底下所有 `*.test.mjs`（目前 14 個檔案、約 320 項）。
+`npm test` 會執行 `test/` 底下所有 `*.test.mjs`（目前 14 個檔案、約 350 項）。
 玩家控制器、關卡、劇情系統全部不依賴 DOM，因此整個模擬可在 Node 中無頭執行。
 這讓一些在瀏覽器裡很難驗證的問題可以被自動化檢查：
 
@@ -455,7 +462,7 @@ npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，�
 | `opening.test.mjs` | 第一章（甦醒）可通關性，**外加**衝刺缺口在沒解鎖衝刺時真的過不去 |
 | `player.test.mjs` | coyote time、跳躍緩衝、可變跳躍高度、衝刺距離、無敵幀、數值穩定性 |
 | `abilities.test.mjs` | 能力閘門：鎖住時完全無效、解鎖瞬間立即生效、不影響舊有測試 |
-| `weapons.test.mjs` | 武器系統：近戰即時判定/自身冷卻、槍械瞄準擴散隨持握時間收斂並在放開時歸零、子彈數值繼承武器規格、撿拾與重生的持有狀態 |
+| `weapons.test.mjs` | 武器系統：近戰即時判定/自身冷卻；槍械瞄準與扳機分離、扇形收窄與每發擴散、半自動與射速上限、彈著必在扇形內、滑鼠游標瞄準；重生後的持有狀態 |
 | `input.test.mjs` | 觸控輸入與鍵盤/手把共用同一套按下/持續/放開邊緣語意，來源互不干擾 |
 | `art.test.mjs` | `?art=` 切換；每張生成的 sprite sheet 實際尺寸與程式切格定義完全吻合 |
 | `story.test.mjs` | 旗標、能力預設值、存讀檔（含毀損存檔、跨版本存檔的處理） |
@@ -490,7 +497,7 @@ npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，�
   再登記到 `ENEMY_TYPES`。
 - 新增武器：在 `weapons.js` 的 `WEAPONS` 加一筆資料即可；近戰只需
   `damage`/`range`/`cooldown`/`knockback`，槍械另外要
-  `bulletSpeed`/`fireRate`/`aimRampTime`/`spreadMax`/`spreadMin`。
+  `range`/`fireRate`/`aimRampTime`/`spreadMax`/`spreadMin`/`bloom`/`kick`/`trauma`/`recoil`。
   要讓玩家撿到，在關卡裡呼叫 `b.weaponPickup(col, row, '新武器id')`。
 - 換角色美術：覆蓋 `assets/player.png`（見上方 Sprite Sheet 一節）。
 - 敵人目前仍是程式繪製；若也想改用 sprite，同一套 `SpriteSheet` + `Animator`
