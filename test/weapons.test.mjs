@@ -8,6 +8,7 @@ import { LevelBuilder } from '../src/game/level.js';
 import { T } from '../src/engine/tilemap.js';
 import { TILE, PLAYER } from '../src/game/constants.js';
 import { WEAPONS, getWeapon } from '../src/game/weapons.js';
+import { ATTACK_TIPS } from '../src/game/attack-tips.js';
 import { stubGame, StubInput, check, summary } from './harness.mjs';
 import { Player } from '../src/game/player.js';
 
@@ -88,6 +89,23 @@ console.log('\nmelee: wind-up, then the strike, then recovery');
   run(ctx, () => [], frames(fists.active + fists.recover) + 1);
   check('the attack ends after its recovery', ctx.p.meleePhase === -1);
   check('one attack, one strike', ctx.game.meleeHits.length === 1);
+}
+
+console.log('\nmelee: the strike effect comes off the drawn fist / weapon tip');
+{
+  for (const id of ['fists', 'stick', 'knife']) {
+    const ctx = makePlayer();
+    ctx.p.equipWeapon(id);
+    const bursts = [];
+    ctx.game.particles.burst = (x, y) => bursts.push({ x, y });
+    run(ctx, () => [], 5);
+    run(ctx, (f) => (f === 0 ? ['fire'] : []), frames(WEAPONS[id].windup) + 1);
+    const tip = ATTACK_TIPS[WEAPONS[id].anim];
+    const b = bursts[0];
+    check(`${id}: the swoosh is emitted at the strike frame's tip`,
+      b && Math.abs(b.x - (ctx.p.body.centerX + tip.x)) < 4 && Math.abs(b.y - (ctx.p.body.bottom + tip.y)) < 1,
+      b ? `(${(b.x - ctx.p.body.centerX).toFixed(1)}, ${(b.y - ctx.p.body.bottom).toFixed(1)}) vs (${tip.x}, ${tip.y})` : 'no burst');
+  }
 }
 
 console.log('\nmelee: a heavier weapon commits you longer');

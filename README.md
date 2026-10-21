@@ -210,7 +210,10 @@ export const WEAPONS = {
 - **出擊**（`active`）：出擊那一格的第一幀，在角色面前開一個矩形範圍
   （`meleeAttack`，`src/game/scenes/world-scene.js`），對範圍內**所有**重疊的
   敵人同時造成傷害，身體同時往前踏一步（`lunge`）；打中會有短暫停頓
-  （`hitstop`，棍棒停得比拳頭久）。
+  （`hitstop`，棍棒停得比拳頭久）。揮擊特效從拳頭／棍尖／刀尖噴出——
+  這些位置是打包工具直接從出擊那一格的圖量出來的（`src/game/attack-tips.js`），
+  重新生成美術後會自動跟著更新。
+- AI 美術版裡武器只出現在攻擊動畫中，待機和跑步時不另外疊畫武器。
 - **收招**（`recover`）：拉回、恢復架式。
 
 攻擊中在地面上會站定不動、也不能轉身——出手就要承擔。棍棒蓄力更久、收招更慢，
@@ -307,6 +310,7 @@ src/
     player-anims.js   Sprite 版面定義與動畫狀態選擇（純函式）
     enemy.js          敵人：Walker（持刀劫匪，有預兆的攻擊流程）/ Flyer / Turret
     weapons.js        武器資料表（近戰/槍械數值）
+    attack-tips.js    出擊格的拳頭/棍尖/刀尖座標（由 ai_spritesheet.py 量測產生）
     pickup.js         可撿拾的武器物件（WeaponPickup）
     bullet.js         彈丸
     level.js          LevelBuilder 關卡建構 API 與第一關（The Undercroft）

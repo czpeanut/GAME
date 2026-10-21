@@ -7,6 +7,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { pickArtSet, WALKER_ANIMS } from '../src/game/art.js';
 import { ANIMS, SHEETS } from '../src/game/player-anims.js';
 import { WEAPONS } from '../src/game/weapons.js';
+import { ATTACK_TIPS } from '../src/game/attack-tips.js';
+import { PLAYER } from '../src/game/constants.js';
 import { check, summary } from './harness.mjs';
 
 // Width/height straight from the PNG's IHDR chunk - no image library needed.
@@ -49,6 +51,18 @@ console.log('\ngenerated sheets match their grids');
   checkGrid('player (classic)', SHEETS.classic.src, SHEETS.classic.frameW, SHEETS.classic.frameH, baseAnims);
   checkGrid('walker', './assets/ai/walker.png', 48, 48, WALKER_ANIMS);
   checkGrid('zhou', './assets/ai/zhou.png', 48, 48, { idle: { row: 0, frames: 3 } });
+}
+
+console.log('\nattack tips (generated from the strike frames)');
+{
+  for (const w of Object.values(WEAPONS).filter((x) => x.anim)) {
+    const tip = ATTACK_TIPS[w.anim];
+    check(`${w.anim}: has a measured tip`, !!tip);
+    if (!tip) continue;
+    check(`${w.anim}: the tip is in front of the body`, tip.x > PLAYER.w / 2, `x=${tip.x}`);
+    check(`${w.anim}: the tip is between the feet and the top of the head`,
+      tip.y < 0 && tip.y > -PLAYER.h - 8, `y=${tip.y}`);
+  }
 }
 
 console.log('\nbackdrop and tiles');

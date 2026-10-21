@@ -4,6 +4,7 @@ import { clamp, approach, sign, rand, damp, lerp } from '../engine/math.js';
 import { Animator } from '../engine/animator.js';
 import { SpriteSheet } from '../engine/sprites.js';
 import { getWeapon } from './weapons.js';
+import { ATTACK_TIPS } from './attack-tips.js';
 import {
   ANIMS,
   SHEETS,
@@ -460,9 +461,16 @@ export class Player {
     };
     this.game.meleeAttack(rect, w, dir);
 
+    // The swoosh comes off the fist / club end / blade tip exactly where the
+    // strike frame draws it. Without attack frames (classic art) there is no
+    // drawn tip to match, so it sits at the far edge of the reach.
+    const tip = SHEETS[ART_SET].hasAttacks ? ATTACK_TIPS[w.anim] : null;
+    const fx = tip ? this.body.centerX + dir * tip.x : dir > 0 ? rect.x + rect.w : rect.x;
+    const fy = tip ? this.body.bottom + tip.y : this.centerY;
+
     this.game.audio.swing();
     this.game.camera.addTrauma(0.04);
-    this.game.particles.burst(dir > 0 ? rect.x + rect.w : rect.x, this.centerY, 6, {
+    this.game.particles.burst(fx, fy, 6, {
       color: ['#ffffff', '#c7d0da'],
       speedMin: 60,
       speedMax: 180,
@@ -919,8 +927,9 @@ export class Player {
       return;
     }
 
-    // The attack frames already show the weapon in hand.
-    if (w.id === 'fists' || this._spriteAttacking) return;
+    // With attack frames the weapon only ever appears as part of the drawn
+    // swing - no separate shape is layered over the idle/run poses.
+    if (w.id === 'fists' || (this.sheet.ready && SHEETS[ART_SET].hasAttacks)) return;
 
     // Melee weapon: rests low near the hip normally; without attack frames
     // (classic art) it is drawn pulled back, thrust out, then returning,
