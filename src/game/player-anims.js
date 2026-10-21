@@ -7,12 +7,23 @@
 // `row` must match the row order in tools/make-spritesheet.mjs. Replacing the
 // PNG with your own art only requires keeping the same grid and row order.
 
-export const FRAME_W = 32;
-export const FRAME_H = 40;
+import { ART_SET } from './art.js';
 
-// The sprite is taller and wider than the 20x34 collision box on purpose - the
-// horns and cloak overhang the hitbox, which is what makes the character read
-// as a silhouette rather than a rectangle.
+// Two interchangeable art sets share this one ANIMS layout (see art.js):
+//   ai      - Gemini-generated frames, packed by tools/ai_spritesheet.py
+//   classic - the procedural sheet drawn by tools/make-spritesheet.mjs
+export const SHEETS = {
+  ai: { src: './assets/ai/player.png', frameW: 48, frameH: 48 },
+  classic: { src: './assets/player.png', frameW: 32, frameH: 40 },
+};
+
+export { ART_SET };
+export const FRAME_W = SHEETS[ART_SET].frameW;
+export const FRAME_H = SHEETS[ART_SET].frameH;
+
+// The sprite cell is larger than the 20x34 collision box on purpose - limbs
+// in motion overhang the hitbox, which is what makes the character read as a
+// silhouette rather than a rectangle.
 export const ANIMS = {
   idle: { row: 0, frames: 4, fps: 6, loop: true },
   run: { row: 1, frames: 6, fps: 14, loop: true },

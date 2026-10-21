@@ -3,6 +3,7 @@ import { PHYS, COLORS, TILE } from './constants.js';
 import { clamp, sign, rand, damp, approach } from '../engine/math.js';
 import { makeEnemyBullet } from './bullet.js';
 import { isSolidTile } from '../engine/tilemap.js';
+import { walkerSheet, WALKER_ANIMS } from './art.js';
 
 // Shared enemy behaviour: health, hit flash, knockback, death.
 // Subclasses implement `think(dt, player, map)` and `draw(ctx)`.
@@ -28,6 +29,9 @@ class Enemy {
   get rect() { return this.body.rect; }
   get centerX() { return this.body.centerX; }
   get centerY() { return this.body.centerY; }
+  // How far above the hitbox the health bar floats; sprites taller than
+  // their hitbox raise it so it clears the head.
+  get barLift() { return 7; }
 
   update(dt, player, map) {
     this.hitFlash -= dt;
@@ -100,7 +104,7 @@ class Enemy {
   _healthBar(ctx) {
     const w = this.w;
     const x = this.x;
-    const y = this.y - 7;
+    const y = this.y - this.barLift;
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(x - 1, y - 1, w + 2, 5);
     ctx.fillStyle = '#3a2030';
@@ -159,7 +163,41 @@ export class Walker extends Enemy {
     this.legPhase += Math.abs(b.vx) * dt * 0.09;
   }
 
+  // Which sheet cell is showing. Driven by legPhase, which already advances
+  // with actual ground speed, so the feet never slide.
+  _spriteCell() {
+    const anim = this.aggro > 0 ? WALKER_ANIMS.charge : WALKER_ANIMS.walk;
+    const frame = Math.floor(this.legPhase / (Math.PI / 2)) % anim.frames;
+    return { col: frame, row: anim.row };
+  }
+
+  // Sprite drawn feet-on-hitbox-bottom, centred, flipped by facing. The
+  // sheet's art faces right. The figure is taller than the 22x26 hitbox,
+  // like the player's - the head overhangs it.
+  _drawSprite(ctx, silhouette) {
+    const { col, row } = this._spriteCell();
+    const fw = walkerSheet.frameW;
+    const fh = walkerSheet.frameH;
+    ctx.save();
+    ctx.translate(this.x + this.w / 2, this.y + this.h);
+    ctx.scale(this.facing, 1);
+    if (silhouette) walkerSheet.drawFrameSilhouette(ctx, col, row, -fw / 2, -fh + 1);
+    else walkerSheet.drawFrame(ctx, col, row, -fw / 2, -fh + 1);
+    ctx.restore();
+  }
+
+  get barLift() { return walkerSheet?.ready ? 24 : 7; }
+
+  drawSilhouette(ctx) {
+    if (walkerSheet?.ready) this._drawSprite(ctx, true);
+    else super.drawSilhouette(ctx);
+  }
+
   draw(ctx) {
+    if (walkerSheet?.ready) {
+      this._drawSprite(ctx, false);
+      return;
+    }
     const { x, y, w, h } = this;
     const charging = this.aggro > 0;
     const cx = x + w / 2;

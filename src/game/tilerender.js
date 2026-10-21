@@ -1,5 +1,6 @@
 import { TILE, COLORS } from './constants.js';
 import { T, isSolidTile } from '../engine/tilemap.js';
+import { tileArt, CAP_OVERHANG } from './art.js';
 
 // Draws only the tiles inside the camera view. A 150x32 level is 4800 tiles;
 // iterating all of them every frame would waste most of the frame budget on
@@ -18,6 +19,7 @@ export class TileRenderer {
     const c1 = Math.min(map.cols - 1, Math.floor((camX + viewW) / TILE));
     const r0 = Math.max(0, Math.floor(camY / TILE));
     const r1 = Math.min(map.rows - 1, Math.floor((camY + viewH) / TILE));
+    const textured = tileArt && tileArt.fill.ready && tileArt.cap.ready;
 
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
@@ -28,6 +30,7 @@ export class TileRenderer {
 
         if (t === T.SPIKE) this._spikes(ctx, x, y);
         else if (t === T.ONEWAY) this._oneWay(ctx, x, y);
+        else if (textured) this._solidTextured(ctx, x, y, c, r);
         else this._solid(ctx, x, y, c, r, t);
       }
     }
@@ -71,6 +74,37 @@ export class TileRenderer {
     }
     if (!isSolidTile(map.at(c + 1, r))) {
       ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fillRect(x + TILE - 2, y, 2, TILE);
+    }
+  }
+
+  // AI-art path: a 4x4-tile texture sampled by world position (so adjacent
+  // tiles continue the same texture seamlessly), darkened with depth, and an
+  // asphalt cap on any face open to the sky.
+  _solidTextured(ctx, x, y, c, r) {
+    const map = this.map;
+    const fill = tileArt.fill.image;
+    const sx = x % fill.width;
+    const sy = y % fill.height;
+    ctx.drawImage(fill, sx, sy, TILE, TILE, x, y, TILE, TILE);
+
+    const depth = Math.min(3, this._depthBelowSurface(c, r));
+    if (depth > 0) {
+      ctx.fillStyle = `rgba(8,6,10,${0.12 * depth})`;
+      ctx.fillRect(x, y, TILE, TILE);
+    }
+
+    if (!isSolidTile(map.at(c, r - 1))) {
+      const cap = tileArt.cap.image;
+      const cx = x % cap.width;
+      ctx.drawImage(cap, cx, 0, TILE, cap.height, x, y - CAP_OVERHANG, TILE, cap.height);
+    }
+    if (!isSolidTile(map.at(c - 1, r))) {
+      ctx.fillStyle = 'rgba(255,240,220,0.06)';
+      ctx.fillRect(x, y, 2, TILE);
+    }
+    if (!isSolidTile(map.at(c + 1, r))) {
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
       ctx.fillRect(x + TILE - 2, y, 2, TILE);
     }
   }

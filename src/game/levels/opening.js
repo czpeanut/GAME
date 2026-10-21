@@ -16,6 +16,7 @@
 import { LevelBuilder } from '../level.js';
 import { T } from '../../engine/tilemap.js';
 import { TILE } from '../constants.js';
+import { npcSheets } from '../art.js';
 import { CutsceneScene } from '../scenes/cutscene-scene.js';
 import { DialogueScene } from '../scenes/dialogue-scene.js';
 import { EndingScene } from '../scenes/ending-scene.js';
@@ -84,6 +85,7 @@ export function buildOpening() {
   b.npc(43, GROUND - 2, {
     id: 'old-zhou',
     color: '#c9a25b',
+    sheet: npcSheets.zhou,
     onInteract: (world, game) => {
       game.scenes.push(new DialogueScene(game, zhouScript(game)));
     },

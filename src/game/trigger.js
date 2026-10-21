@@ -66,8 +66,12 @@ export class StoryTrigger {
 }
 
 export class Npc {
-  constructor({ id, x, y, w = 20, h = 34, color = '#d9c68a', facing = -1, onInteract }) {
+  // `sheet` (optional) is a SpriteSheet whose art faces LEFT: frames 0-1 an
+  // idle breathing pair, frame 2 a small wave. Without one (or until it
+  // loads) the NPC is the plain coloured block.
+  constructor({ id, x, y, w = 20, h = 34, color = '#d9c68a', facing = -1, sheet = null, onInteract }) {
     this.id = id;
+    this.sheet = sheet;
     this.x = x;
     this.y = y;
     this.w = w;
@@ -105,6 +109,20 @@ export class Npc {
   }
 
   render(ctx) {
+    if (this.sheet?.ready) {
+      // Breathe on a slow two-frame loop, with a brief wave every few
+      // seconds so a waiting NPC reads as someone, not scenery.
+      const t = this.bob % 6;
+      const frame = t < 0.9 ? 2 : Math.floor(this.bob * 1.6) % 2;
+      const fw = this.sheet.frameW;
+      const fh = this.sheet.frameH;
+      ctx.save();
+      ctx.translate(this.x + this.w / 2, this.y + this.h);
+      ctx.scale(this.facing < 0 ? 1 : -1, 1);
+      this.sheet.drawFrame(ctx, frame, 0, -fw / 2, -fh + 1);
+      ctx.restore();
+      return;
+    }
     const sway = Math.sin(this.bob * 1.4) * 1.5;
     ctx.fillStyle = this.color;
     ctx.fillRect(this.x + sway * 0.2, this.y, this.w, this.h);

@@ -6,6 +6,8 @@ import { SpriteSheet } from '../engine/sprites.js';
 import { getWeapon } from './weapons.js';
 import {
   ANIMS,
+  SHEETS,
+  ART_SET,
   FRAME_W,
   FRAME_H,
   pickPlayerAnimation,
@@ -26,11 +28,7 @@ const FULL_ABILITIES = { dash: true, doubleJump: true, wallJump: true };
 
 // Shared by every Player instance. Loading is asynchronous and non-blocking;
 // until it finishes (or if it fails) the procedural art is drawn instead.
-const playerSheet = new SpriteSheet({
-  src: './assets/player.png',
-  frameW: FRAME_W,
-  frameH: FRAME_H,
-});
+const playerSheet = new SpriteSheet(SHEETS[ART_SET]);
 
 // The player character. Almost every line here exists to make control feel
 // immediate: buffered input, forgiving ground checks, asymmetric gravity,
