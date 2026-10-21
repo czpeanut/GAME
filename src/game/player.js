@@ -70,8 +70,13 @@ export class Player {
     this.fireBufferT = 0; // a trigger pull slightly early still fires
     this.gunKick = 0; // 1 right after a shot, decays - visual recoil
     this.fanFlash = 0; // briefly shows the fan after a hip-fired shot
-    this.meleeSwingT = 0;
-    this.meleeSwingDir = 1;
+    // Melee attack in progress: seconds since it started (-1 = none), the
+    // direction it was thrown in, the weapon that threw it, and whether its
+    // strike has already resolved (each swing hits once).
+    this.meleeT = -1;
+    this.meleeDir = 1;
+    this.meleeWeaponId = 'fists';
+    this.meleeHit = false;
 
     this.wallSliding = false;
     this.aimY = 0;
@@ -146,8 +151,12 @@ export class Player {
 
     this._tickTimers(dt);
 
-    const wantX = input.axisX;
-    if (this.dashT <= 0 && wantX !== 0 && this.wallJumpLock <= 0) {
+    // Planted while swinging on the ground: a punch thrown while sliding
+    // forward reads as floaty, and committing to an attack should cost
+    // something. In the air the swing doesn't stop the drift.
+    const striking = this.meleeT >= 0;
+    const wantX = striking && this.grounded ? 0 : input.axisX;
+    if (this.dashT <= 0 && wantX !== 0 && this.wallJumpLock <= 0 && !striking) {
       this.facing = wantX;
     }
     this.aimY = input.axisY;
@@ -185,7 +194,6 @@ export class Player {
     this.fanFlash -= dt;
     if (this.dashT > 0) this.dashT -= dt;
     if (this.wallStick > 0) this.wallStick -= dt;
-    if (this.meleeSwingT > 0) this.meleeSwingT -= dt;
   }
 
   _updateGroundState(map) {
@@ -394,6 +402,7 @@ export class Player {
   // handed.
   _handleAttack(dt, input) {
     const w = this.weapon;
+    if (this.meleeT >= 0) this._advanceMelee(dt);
     if (w.type === 'melee') {
       this.isAiming = false;
       this._handleMelee(input, w);
@@ -402,44 +411,69 @@ export class Player {
     }
   }
 
-  // Instant swing: press, and anything the weapon's reach touches takes
-  // damage immediately. No spread, no ramp-up - a weapon in your hand hits
-  // exactly as far as it reaches, every time.
+  // Starts an attack; _advanceMelee plays it out. Holding the button chains
+  // attacks at the weapon's own pace.
   _handleMelee(input, w) {
-    if (!input.down('fire') || this.attackCd > 0) return;
+    if (!input.down('fire') || this.attackCd > 0 || this.meleeT >= 0) return;
     this.attackCd = w.cooldown;
-    this.meleeSwingT = w.swingTime;
-    this.meleeSwingDir = this.facing;
+    this.meleeT = 0;
+    this.meleeDir = this.facing;
+    this.meleeWeaponId = w.id;
+    this.meleeHit = false;
+  }
 
+  get meleeWeapon() {
+    return getWeapon(this.meleeWeaponId);
+  }
+
+  // 0 wind-up, 1 strike, 2 recovery, -1 not attacking - also the index of
+  // the animation frame on screen.
+  get meleePhase() {
+    if (this.meleeT < 0) return -1;
+    const w = this.meleeWeapon;
+    if (this.meleeT < w.windup) return 0;
+    return this.meleeT < w.windup + w.active ? 1 : 2;
+  }
+
+  _advanceMelee(dt) {
+    const w = this.meleeWeapon;
+    this.meleeT += dt;
+    if (!this.meleeHit && this.meleeT >= w.windup) {
+      this.meleeHit = true;
+      this._strike(w);
+    }
+    if (this.meleeT >= w.windup + w.active + w.recover) this.meleeT = -1;
+  }
+
+  // The strike frame: step in, and everything inside the weapon's reach is
+  // hit at once.
+  _strike(w) {
+    const dir = this.meleeDir;
+    this.body.vx = dir * w.lunge;
     const range = w.range;
     const arcH = this.body.h * 0.75;
     const rect = {
-      x: this.facing > 0 ? this.body.right : this.body.x - range,
+      x: dir > 0 ? this.body.right : this.body.x - range,
       y: this.centerY - arcH / 2,
       w: range,
       h: arcH,
     };
-    this.game.meleeAttack(rect, w, this.facing);
+    this.game.meleeAttack(rect, w, dir);
 
     this.game.audio.swing();
-    this.game.camera.addTrauma(0.03);
-    this.game.particles.burst(
-      this.facing > 0 ? rect.x + rect.w : rect.x,
-      this.centerY,
-      6,
-      {
-        color: ['#ffffff', '#c7d0da'],
-        speedMin: 60,
-        speedMax: 180,
-        angle: this.facing > 0 ? 0 : Math.PI,
-        spread: 0.6,
-        lifeMin: 0.08,
-        lifeMax: 0.2,
-        shape: 'streak',
-        sizeMin: 2,
-        sizeMax: 4,
-      }
-    );
+    this.game.camera.addTrauma(0.04);
+    this.game.particles.burst(dir > 0 ? rect.x + rect.w : rect.x, this.centerY, 6, {
+      color: ['#ffffff', '#c7d0da'],
+      speedMin: 60,
+      speedMax: 180,
+      angle: dir > 0 ? 0 : Math.PI,
+      spread: 0.6,
+      lifeMin: 0.08,
+      lifeMax: 0.2,
+      shape: 'streak',
+      sizeMin: 2,
+      sizeMax: 4,
+    });
   }
 
   // Aim and trigger are separate: `aim` (right mouse button) steadies the
@@ -712,6 +746,20 @@ export class Player {
     // death mid-aim does not carry a phantom steadied fan into the respawn.
     this._resetAim();
     this.attackCd = 0;
+    this.meleeT = -1;
+  }
+
+  // True when the current art set has drawn attack frames, so the swing is
+  // the sprite itself rather than a shape layered over a standing pose.
+  get _spriteAttacking() {
+    return this.meleeT >= 0 && this.sheet.ready && SHEETS[ART_SET].hasAttacks;
+  }
+
+  _spriteCell() {
+    if (this._spriteAttacking) {
+      return { col: this.meleePhase, row: ANIMS[this.meleeWeapon.anim].row };
+    }
+    return { col: this.animator.frame, row: this.animator.row };
   }
 
   render(ctx) {
@@ -774,17 +822,12 @@ export class Player {
     const b = this.body;
     ctx.save();
     ctx.translate(b.centerX, b.bottom);
-    ctx.scale(this.facing * this.squashX, this.squashY);
+    ctx.scale((this.meleeT >= 0 ? this.meleeDir : this.facing) * this.squashX, this.squashY);
 
     // The sprite's feet sit on its bottom row, so shifting up by one frame
     // height lands them on the collision box's bottom edge.
-    this.sheet.drawFrame(
-      ctx,
-      this.animator.frame,
-      this.animator.row,
-      -FRAME_W / 2,
-      -FRAME_H + 1
-    );
+    const { col, row } = this._spriteCell();
+    this.sheet.drawFrame(ctx, col, row, -FRAME_W / 2, -FRAME_H + 1);
 
     // Flash white on the hit frames by overlaying the same silhouette.
     if (this.hurtT > 0) {
@@ -876,13 +919,15 @@ export class Player {
       return;
     }
 
-    if (w.id === 'fists') return;
+    // The attack frames already show the weapon in hand.
+    if (w.id === 'fists' || this._spriteAttacking) return;
 
-    // Melee weapon: rests low near the hip normally, swings out ahead of the
-    // character while meleeSwingT counts down from the swing's full duration.
-    const mid = this.meleeSwingT > 0 ? 1 - this.meleeSwingT / w.swingTime : 0.25;
-    const dir = this.meleeSwingT > 0 ? this.meleeSwingDir : this.facing;
-    const extend = this.meleeSwingT > 0 ? Math.sin(mid * Math.PI) : 0.25;
+    // Melee weapon: rests low near the hip normally; without attack frames
+    // (classic art) it is drawn pulled back, thrust out, then returning,
+    // following the attack's phases.
+    const attacking = this.meleeT >= 0;
+    const dir = attacking ? this.meleeDir : this.facing;
+    const extend = attacking ? [-0.2, 1, 0.5][this.meleePhase] : 0.25;
     const tipX = cx + dir * (10 + w.range * extend);
     const tipY = cy - 2;
 

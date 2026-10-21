@@ -164,6 +164,22 @@ def find_poses_by_components(rgba, n, step=4):
     return poses
 
 
+def feet_center_x(rgba, frac=0.15):
+    """Horizontal centre of the lowest `frac` of the figure - the planted
+    feet. Attack poses anchor here: a swung club or a thrown fist drags the
+    centre of mass forward, and anchoring on it would make the character
+    appear to slide backward while striking."""
+    w, h = rgba.size
+    a = rgba.getchannel('A').load()
+    tot = sx = 0
+    for y in range(int(h * (1 - frac)), h):
+        for x in range(w):
+            if a[x, y]:
+                tot += 1
+                sx += x
+    return sx / tot if tot else w / 2
+
+
 def mass_center_x(rgba):
     a = rgba.getchannel('A').load()
     w, h = rgba.size
@@ -253,7 +269,8 @@ def build(cfg_path):
     for row, a in enumerate(anims):
         scale = scales[a['name']]
         for col, p in enumerate(poses[a['name']]):
-            cx = mass_center_x(p) * scale
+            anchor = feet_center_x if a.get('anchor') == 'feet' else mass_center_x
+            cx = anchor(p) * scale
             small = downscale(p, scale)
             if small.size[0] > fw or small.size[1] > fh:
                 # Shrink just this pose to fit rather than clipping it; logged

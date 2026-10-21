@@ -29,6 +29,12 @@ class Enemy {
   get rect() { return this.body.rect; }
   get centerX() { return this.body.centerX; }
   get centerY() { return this.body.centerY; }
+  // The area that hurts the player on touch. Most enemies are harmful to
+  // touch anywhere; ones with a real attack override this.
+  harmRect() {
+    return this.rect;
+  }
+
   // How far above the hitbox the health bar floats; sprites taller than
   // their hitbox raise it so it clears the head.
   get barLift() { return 7; }
@@ -115,60 +121,185 @@ class Enemy {
 }
 
 // ---------------------------------------------------------------------------
-// Walker: a knife-wielding looter. Patrols a platform, turns at walls and
-// ledges, charges knife-first when it sees the player - the primary early
-// threat, meant to be fought with whatever melee weapon is at hand before
-// firearms enter the story.
+// Walker: a knife-wielding looter, and the primary early threat - meant to be
+// fought with whatever melee weapon is at hand before firearms enter the
+// story. Every attack is telegraphed so a careful player can read and punish
+// it:
+//
+//   patrol   -> walks its platform, turning at walls and ledges
+//   alert    -> spotted the player: stops dead, "!" over its head
+//   approach -> walks (not runs) toward the player - slower than the player
+//               can run, so backing off is always an option
+//   windup   -> knife drawn back, glinting: the cue to dodge or strike first
+//   stab     -> a short lunge; the ONLY moment the knife can hurt
+//   recover  -> overextended and open after the stab
+//   stagger  -> any hit interrupts whatever it was doing
+//
+// Bumping into a looter that is not mid-stab does no damage - the threat is
+// the blade, not the body.
+export const WALKER = {
+  patrolSpeed: 45,
+  approachSpeed: 85,
+  sightX: 200,
+  sightY: 60,
+  alertTime: 0.55,
+  loseTime: 1.6, // out of sight this long -> back to patrolling
+  stabRange: 46, // centre-to-centre distance that starts the wind-up
+  windupTime: 0.45,
+  stabTime: 0.16,
+  stabSpeed: 260,
+  reach: 16, // how far the blade extends past the body during the stab
+  recoverTime: 0.75,
+  staggerTime: 0.4,
+};
+
 export class Walker extends Enemy {
   constructor(x, y, game) {
     super(x, y, 22, 26, game);
     this.maxHealth = this.health = 3;
-    this.speed = 62;
-    this.chargeSpeed = 175;
-    this.aggro = 0;
+    this.state = 'patrol';
+    this.stateT = 0;
+    this.unseenT = 0;
     this.legPhase = rand(0, Math.PI * 2);
+  }
+
+  _enter(state, time = 0) {
+    this.state = state;
+    this.stateT = time;
+    if (state === 'windup') {
+      this.game.audio.tone?.({ freq: 260, endFreq: 620, type: 'triangle', dur: 0.14, gain: 0.07 });
+    }
+  }
+
+  hurt(amount, knockDir, force) {
+    super.hurt(amount, knockDir, force);
+    // Getting hit always breaks the attack - landing the first blow matters.
+    if (!this.dead) this._enter('stagger', WALKER.staggerTime);
+  }
+
+  // Only the stab hurts, and only within the blade's reach in front.
+  harmRect() {
+    if (this.state !== 'stab') return null;
+    const r = this.rect;
+    return this.facing > 0
+      ? { x: r.x, y: r.y, w: r.w + WALKER.reach, h: r.h }
+      : { x: r.x - WALKER.reach, y: r.y, w: r.w + WALKER.reach, h: r.h };
   }
 
   think(dt, player, map) {
     const b = this.body;
-
-    // Aggro when the player is close and roughly level with us.
+    const W = WALKER;
     const dx = player.centerX - this.centerX;
     const dy = player.centerY - this.centerY;
-    const sees = Math.abs(dx) < 220 && Math.abs(dy) < 70 && player.alive;
-    if (sees) this.aggro = 1.6;
-    this.aggro -= dt;
+    const sees = player.alive && Math.abs(dx) < W.sightX && Math.abs(dy) < W.sightY;
+    this.unseenT = sees ? 0 : this.unseenT + dt;
+    this.stateT -= dt;
 
-    if (this.aggro > 0) {
-      this.facing = sign(dx) || this.facing;
-      b.vx = approach(b.vx, this.facing * this.chargeSpeed, 900 * dt);
-    } else {
-      b.vx = approach(b.vx, this.facing * this.speed, 500 * dt);
+    let targetVx = 0;
+    let accel = 900;
+    switch (this.state) {
+      case 'patrol':
+        targetVx = this.facing * W.patrolSpeed;
+        accel = 500;
+        if (sees) {
+          this.facing = sign(dx) || this.facing;
+          this._enter('alert', W.alertTime);
+        }
+        break;
+      case 'alert':
+        this.facing = sign(dx) || this.facing;
+        if (this.stateT <= 0) this._enter('approach');
+        break;
+      case 'approach':
+        this.facing = sign(dx) || this.facing;
+        if (this.unseenT > W.loseTime) this._enter('patrol');
+        else if (Math.abs(dx) < W.stabRange && Math.abs(dy) < 30) this._enter('windup', W.windupTime);
+        else if (!this._ledgeAhead(map)) targetVx = this.facing * W.approachSpeed;
+        accel = 600;
+        break;
+      case 'windup':
+        // Committed to its direction from here: a player who steps behind it
+        // during the wind-up gets a free hit.
+        if (this.stateT <= 0) {
+          this._enter('stab', W.stabTime);
+          b.vx = this.facing * W.stabSpeed;
+        }
+        break;
+      case 'stab':
+        targetVx = this.facing * W.stabSpeed;
+        accel = 2000;
+        if (this.stateT <= 0) this._enter('recover', W.recoverTime);
+        break;
+      case 'recover':
+        accel = 700;
+        if (this.stateT <= 0) this._enter(sees ? 'approach' : 'patrol');
+        break;
+      case 'stagger':
+        accel = 400; // let the knockback carry
+        if (this.stateT <= 0) this._enter(sees ? 'approach' : 'patrol');
+        break;
     }
+    b.vx = approach(b.vx, targetVx, accel * dt);
 
     b.vy = Math.min(b.vy + PHYS.gravity * dt, PHYS.maxFall);
     b.move(map, dt);
 
-    // Turn at a wall.
-    if (b.wallLeft && this.facing < 0) this.facing = 1;
-    else if (b.wallRight && this.facing > 0) this.facing = -1;
-
-    // Turn at a ledge, but only while patrolling - a charging walker will
-    // happily run off an edge, which makes the charge feel committed.
-    if (b.grounded && this.aggro <= 0) {
-      const probeX = this.facing > 0 ? b.right + 2 : b.x - 2;
-      if (!isSolidTile(map.atPixel(probeX, b.bottom + 4))) this.facing *= -1;
+    if (this.state === 'patrol') {
+      if (b.wallLeft && this.facing < 0) this.facing = 1;
+      else if (b.wallRight && this.facing > 0) this.facing = -1;
+      else if (this._ledgeAhead(map)) this.facing *= -1;
     }
 
     this.legPhase += Math.abs(b.vx) * dt * 0.09;
   }
 
+  _ledgeAhead(map) {
+    const b = this.body;
+    if (!b.grounded) return false;
+    const probeX = this.facing > 0 ? b.right + 2 : b.x - 2;
+    return !isSolidTile(map.atPixel(probeX, b.bottom + 4));
+  }
+
   // Which sheet cell is showing. Driven by legPhase, which already advances
   // with actual ground speed, so the feet never slide.
   _spriteCell() {
-    const anim = this.aggro > 0 ? WALKER_ANIMS.charge : WALKER_ANIMS.walk;
-    const frame = Math.floor(this.legPhase / (Math.PI / 2)) % anim.frames;
-    return { col: frame, row: anim.row };
+    const A = WALKER_ANIMS.attack;
+    switch (this.state) {
+      case 'alert': return { col: 0, row: A.row };
+      case 'windup': return { col: 1, row: A.row };
+      case 'stab': return { col: 2, row: A.row };
+      case 'recover':
+        // Still overextended for the first moment, then back on its feet.
+        return this.stateT > WALKER.recoverTime - 0.2 ? { col: 2, row: A.row } : { col: 0, row: WALKER_ANIMS.walk.row };
+      case 'stagger': return { col: 3, row: A.row };
+      default: {
+        const anim = WALKER_ANIMS.walk;
+        return { col: Math.floor(this.legPhase / (Math.PI / 2)) % anim.frames, row: anim.row };
+      }
+    }
+  }
+
+  // Telegraph overlays, drawn on top of either art set: a "!" when it spots
+  // the player, and a blinking glint on the blade during the wind-up.
+  _drawTells(ctx) {
+    const top = this.y - (walkerSheet?.ready ? 18 : 6);
+    if (this.state === 'alert') {
+      ctx.fillStyle = '#ffe14d';
+      ctx.fillRect(this.centerX - 1, top - 9, 3, 6);
+      ctx.fillRect(this.centerX - 1, top - 2, 3, 2);
+    } else if (this.state === 'windup' && Math.floor(this.stateT * 16) % 2 === 0) {
+      const gx = this.centerX - this.facing * 12;
+      const gy = this.y + this.h - 12;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = '#fff6d0';
+      ctx.fillRect(gx - 4, gy, 9, 1);
+      ctx.fillRect(gx, gy - 4, 1, 9);
+      ctx.fillStyle = 'rgba(255,80,80,0.9)';
+      ctx.fillRect(this.centerX - 1, top - 9, 3, 6);
+      ctx.fillRect(this.centerX - 1, top - 2, 3, 2);
+      ctx.restore();
+    }
   }
 
   // Sprite drawn feet-on-hitbox-bottom, centred, flipped by facing. The
@@ -196,10 +327,12 @@ export class Walker extends Enemy {
   draw(ctx) {
     if (walkerSheet?.ready) {
       this._drawSprite(ctx, false);
+      this._drawTells(ctx);
       return;
     }
+    this._drawTells(ctx);
     const { x, y, w, h } = this;
-    const charging = this.aggro > 0;
+    const charging = this.state === 'windup' || this.state === 'stab';
     const cx = x + w / 2;
     const bodyColor = charging ? '#ff7089' : this.color;
     const stride = Math.sin(this.legPhase) * 2;

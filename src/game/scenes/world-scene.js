@@ -198,7 +198,11 @@ export class WorldScene extends Scene {
       e.hurt(weapon.damage, facingDir, weapon.knockback);
       hitAny = true;
     }
-    if (hitAny) this.camera.addTrauma(0.05);
+    if (hitAny) {
+      // Heavier weapons stop the world a little longer on contact.
+      this.freeze(weapon.hitstop ?? 0.04);
+      this.camera.addTrauma(0.08);
+    }
   }
 
   respawn() {
@@ -316,14 +320,15 @@ export class WorldScene extends Scene {
 
     // Contact damage. Landing on an enemy from above bounces off it and deals
     // damage instead of hurting the player - stomping is too satisfying to
-    // omit.
+    // omit. Otherwise only the enemy's harmRect() hurts: the whole body for
+    // most enemies, but just the blade mid-stab for a looter.
     for (const e of this.enemies) {
-      if (e.dead || !aabb(p.rect, e.rect)) continue;
-
+      if (e.dead) continue;
+      const touching = aabb(p.rect, e.rect);
       const falling = p.body.vy > 60;
       const above = p.body.bottom - e.body.y < 16;
 
-      if (falling && above) {
+      if (touching && falling && above) {
         e.hurt(2, Math.sign(p.body.vx) || 1);
         p.body.vy = -430;
         p.airJumps = Math.max(p.airJumps, 1); // reward the stomp
@@ -331,6 +336,8 @@ export class WorldScene extends Scene {
         this.camera.addTrauma(0.14);
         this.game.audio.tone({ freq: 520, endFreq: 180, type: 'square', dur: 0.1, gain: 0.14 });
       } else if (!p.invulnerable) {
+        const harm = e.harmRect();
+        if (!harm || !aabb(p.rect, harm)) continue;
         p.hurt(e.contactDamage, Math.sign(p.centerX - e.centerX) || 1);
         this.flash = 0.6;
       }

@@ -190,9 +190,9 @@ b.npc(col, row, { id: 'old-zhou', onInteract: (world, game) => {...} });
 
 ```js
 export const WEAPONS = {
-  fists:  { type: 'melee',  damage: 1, range: 14, cooldown: 0.24, knockback: 70  },
-  stick:  { type: 'melee',  damage: 1, range: 24, cooldown: 0.32, knockback: 160 },
-  knife:  { type: 'melee',  damage: 2, range: 17, cooldown: 0.26, knockback: 90  },
+  fists:  { type: 'melee',  damage: 1, range: 16, windup: 0.07, active: 0.07, recover: 0.12, knockback: 90,  anim: 'punch' },
+  stick:  { type: 'melee',  damage: 1, range: 26, windup: 0.15, active: 0.09, recover: 0.20, knockback: 160, anim: 'stick' },
+  knife:  { type: 'melee',  damage: 2, range: 20, windup: 0.07, active: 0.07, recover: 0.12, knockback: 90,  anim: 'knife' },
   pistol: { type: 'ranged', damage: 4, knockback: 320, range: 560, fireRate: 0.28,
             aimRampTime: 2.4, spreadMax: 0.5, spreadMin: 0.025, bloom: 0.3,
             moveSpread: 0.14, kick: 7, trauma: 0.34, recoil: 150 },
@@ -202,12 +202,30 @@ export const WEAPONS = {
 角色一律從 `fists`（空手）開始——空手也能打，但傷害低、擊退弱，純粹是
 「沒有武器時不至於完全無法自衛」的保底，不是要玩家依賴的選項。
 
-### 近戰：即時判定，不是拋射物
+### 近戰：蓄力、出擊、收招
 
-近戰攻擊按下的瞬間，直接在角色面前開一個矩形範圍（`meleeAttack`，
-`src/game/scenes/world-scene.js`），對範圍內**所有**重疊的敵人同時造成傷害，
-不會產生子彈物件。每種近戰武器有自己的攻速上限（`cooldown`）——按住攻擊鍵
-不會比武器本身的節奏更快，棍棒揮得比拳頭慢但打得更遠、擊退更強。
+每一次近戰攻擊分三段，對應 AI 生成的三格攻擊動畫（出拳、揮棍、刀砍各一組）：
+
+- **蓄力**（`windup`）：拳頭拉回、木棍舉過肩——這時還沒有傷害。
+- **出擊**（`active`）：出擊那一格的第一幀，在角色面前開一個矩形範圍
+  （`meleeAttack`，`src/game/scenes/world-scene.js`），對範圍內**所有**重疊的
+  敵人同時造成傷害，身體同時往前踏一步（`lunge`）；打中會有短暫停頓
+  （`hitstop`，棍棒停得比拳頭久）。
+- **收招**（`recover`）：拉回、恢復架式。
+
+攻擊中在地面上會站定不動、也不能轉身——出手就要承擔。棍棒蓄力更久、收招更慢，
+但打得更遠、擊退更強；按住攻擊鍵會依武器本身的節奏連續出招。
+
+### 持刀劫匪：每一刀都有預兆
+
+劫匪（`Walker`，`src/game/enemy.js`）不再是一看到人就全速衝過來，而是一套有
+預兆的攻擊流程，參數集中在 `WALKER`：
+
+巡邏 → **發現**（停下，頭上黃色「!」）→ **走近**（用走的，比玩家跑步慢很多，
+隨時可以拉開距離）→ **蓄力**（蹲低把刀往後拉、紅色「!」閃爍，約 0.45 秒）→
+**突刺**（短暫前衝，**只有這一下會傷人**）→ **收招硬直**（約 0.75 秒，反擊的
+空檔）。任何時候被打中都會踉蹌、中斷攻擊，所以先出手的人佔優勢。平常撞到他
+不會受傷——危險的是刀，不是身體。
 
 ### 槍械：瞄準會抖，穩住才準
 
@@ -287,7 +305,7 @@ src/
     body.js           AABB 移動體與圖磚碰撞解析
     player.js         玩家控制器（含能力閘門、武器攻擊/瞄準）
     player-anims.js   Sprite 版面定義與動畫狀態選擇（純函式）
-    enemy.js          敵人：Walker（持刀劫匪）/ Flyer / Turret
+    enemy.js          敵人：Walker（持刀劫匪，有預兆的攻擊流程）/ Flyer / Turret
     weapons.js        武器資料表（近戰/槍械數值）
     pickup.js         可撿拾的武器物件（WeaponPickup）
     bullet.js         彈丸
@@ -454,7 +472,7 @@ npm test               # 全部單元測試（純 Node，無需瀏覽器）
 npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，且伺服器執行中）
 ```
 
-`npm test` 會執行 `test/` 底下所有 `*.test.mjs`（目前 14 個檔案、約 350 項）。
+`npm test` 會執行 `test/` 底下所有 `*.test.mjs`（目前 15 個檔案、約 380 項）。
 玩家控制器、關卡、劇情系統全部不依賴 DOM，因此整個模擬可在 Node 中無頭執行。
 這讓一些在瀏覽器裡很難驗證的問題可以被自動化檢查：
 
@@ -464,7 +482,8 @@ npm run test:browser   # 端對端煙霧測試（需 npm i 安裝 playwright，�
 | `opening.test.mjs` | 第一章（甦醒）可通關性，**外加**衝刺缺口在沒解鎖衝刺時真的過不去 |
 | `player.test.mjs` | coyote time、跳躍緩衝、可變跳躍高度、衝刺距離、無敵幀、數值穩定性 |
 | `abilities.test.mjs` | 能力閘門：鎖住時完全無效、解鎖瞬間立即生效、不影響舊有測試 |
-| `weapons.test.mjs` | 武器系統：近戰即時判定/自身冷卻；槍械瞄準與扳機分離、扇形收窄與每發擴散、半自動與射速上限、彈著必在扇形內、滑鼠游標瞄準；重生後的持有狀態 |
+| `enemy.test.mjs` | 劫匪 AI：巡邏/走近都比玩家慢、蓄力夠長可反應且無傷害、只有突刺會傷人、收招有空檔、被打中會中斷 |
+| `weapons.test.mjs` | 武器系統：近戰蓄力後才命中、出擊時踏步、攻擊中站定、自身冷卻；槍械瞄準與扳機分離、扇形收窄與每發擴散、半自動與射速上限、彈著必在扇形內、滑鼠游標瞄準；重生後的持有狀態 |
 | `input.test.mjs` | 觸控輸入與鍵盤/手把共用同一套按下/持續/放開邊緣語意，來源互不干擾 |
 | `art.test.mjs` | `?art=` 切換；每張生成的 sprite sheet 實際尺寸與程式切格定義完全吻合 |
 | `story.test.mjs` | 旗標、能力預設值、存讀檔（含毀損存檔、跨版本存檔的處理） |

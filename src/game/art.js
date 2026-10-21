@@ -24,6 +24,7 @@ const lazyImage = (src) => (USE_AI_ART ? new ImageAsset(src) : null);
 export const WALKER_ANIMS = {
   walk: { row: 0, frames: 4 },
   charge: { row: 1, frames: 2 },
+  attack: { row: 2, frames: 4 }, // alert, wind-up, stab, hurt
 };
 export const walkerSheet = lazySheet({ src: './assets/ai/walker.png', frameW: 48, frameH: 48 });
 

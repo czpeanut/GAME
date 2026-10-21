@@ -6,6 +6,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { pickArtSet, WALKER_ANIMS } from '../src/game/art.js';
 import { ANIMS, SHEETS } from '../src/game/player-anims.js';
+import { WEAPONS } from '../src/game/weapons.js';
 import { check, summary } from './harness.mjs';
 
 // Width/height straight from the PNG's IHDR chunk - no image library needed.
@@ -39,7 +40,13 @@ function checkGrid(label, src, frameW, frameH, anims) {
 console.log('\ngenerated sheets match their grids');
 {
   checkGrid('player (ai)', SHEETS.ai.src, SHEETS.ai.frameW, SHEETS.ai.frameH, ANIMS);
-  checkGrid('player (classic)', SHEETS.classic.src, SHEETS.classic.frameW, SHEETS.classic.frameH, ANIMS);
+  // The classic sheet has no attack rows (hasAttacks: false) - attacks there
+  // fall back to the standing pose plus a drawn weapon.
+  const attackRows = new Set(Object.values(WEAPONS).map((w) => w.anim).filter(Boolean));
+  const baseAnims = Object.fromEntries(Object.entries(ANIMS).filter(([name]) => !attackRows.has(name)));
+  check('every melee weapon has an attack row in the AI sheet',
+    [...attackRows].every((name) => ANIMS[name]) && SHEETS.ai.hasAttacks);
+  checkGrid('player (classic)', SHEETS.classic.src, SHEETS.classic.frameW, SHEETS.classic.frameH, baseAnims);
   checkGrid('walker', './assets/ai/walker.png', 48, 48, WALKER_ANIMS);
   checkGrid('zhou', './assets/ai/zhou.png', 48, 48, { idle: { row: 0, frames: 3 } });
 }

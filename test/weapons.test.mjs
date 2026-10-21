@@ -61,49 +61,72 @@ console.log('\nequipWeapon');
   check('re-equipping the same weapon is a harmless no-op', p.weaponId === 'pistol');
 }
 
-console.log('\nmelee: instant hitbox, not a projectile');
+const frames = (sec) => Math.ceil(sec * 60);
+
+console.log('\nmelee: wind-up, then the strike, then recovery');
+{
+  const ctx = makePlayer();
+  const fists = WEAPONS.fists;
+  run(ctx, () => [], 5);
+  run(ctx, (f) => (f === 0 ? ['fire'] : []), 1);
+  check('pressing attack starts the wind-up, with no hit yet',
+    ctx.p.meleePhase === 0 && ctx.game.meleeHits.length === 0);
+
+  // The press frame starts the clock; the strike lands on the first frame
+  // the clock reaches the end of the wind-up.
+  run(ctx, () => [], frames(fists.windup));
+  check('the strike resolves once the wind-up is over', ctx.game.meleeHits.length === 1,
+    `${ctx.game.meleeHits.length} hits`);
+  check('...and the strike frame is on screen while it does', ctx.p.meleePhase === 1);
+  check('a melee strike never fires a shot', ctx.game.shots.length === 0);
+
+  const hit = ctx.game.meleeHits[0];
+  check('the strike uses the equipped weapon\'s stats', hit.weapon.id === 'fists');
+  check('the hitbox sits in front of the player on the facing side',
+    ctx.p.facing > 0 ? hit.rect.x >= ctx.p.body.right - 4 : hit.rect.x + hit.rect.w <= ctx.p.body.x + 4);
+
+  run(ctx, () => [], frames(fists.active + fists.recover) + 1);
+  check('the attack ends after its recovery', ctx.p.meleePhase === -1);
+  check('one attack, one strike', ctx.game.meleeHits.length === 1);
+}
+
+console.log('\nmelee: a heavier weapon commits you longer');
+{
+  const { stick, fists } = WEAPONS;
+  check('the stick winds up longer than a punch', stick.windup > fists.windup);
+  check('...and recovers slower', stick.recover > fists.recover);
+  for (const w of [WEAPONS.fists, WEAPONS.stick, WEAPONS.knife]) {
+    check(`${w.id}: cooldown covers the whole attack`, w.cooldown >= w.windup + w.active + w.recover - 1e-9);
+  }
+}
+
+console.log('\nmelee: planted while striking on the ground, with a step in');
 {
   const ctx = makePlayer();
   run(ctx, () => [], 5);
-  run(ctx, (f) => (f === 0 ? ['fire'] : []), 1);
-  check('a melee press resolves through meleeAttack', ctx.game.meleeHits.length === 1);
-  check('a melee press never fires a shot', ctx.game.shots.length === 0);
+  run(ctx, (f) => (f === 0 ? ['fire', 'right'] : ['right']), frames(WEAPONS.fists.windup));
+  check('holding a direction during the wind-up does not walk', Math.abs(ctx.p.body.vx) < 5,
+    ctx.p.body.vx.toFixed(1));
+  run(ctx, () => ['right'], 1);
+  check('the strike steps forward', ctx.p.body.vx > 20, ctx.p.body.vx.toFixed(1));
 
-  const hit = ctx.game.meleeHits[0];
-  check('the swing uses the equipped weapon\'s stats', hit.weapon.id === 'fists');
-  check('the hitbox sits in front of the player on the facing side',
-    ctx.p.facing > 0 ? hit.rect.x >= ctx.p.body.right - 1 : hit.rect.x + hit.rect.w <= ctx.p.body.x + 1);
+  const turn = makePlayer();
+  run(turn, () => [], 5);
+  run(turn, (f) => (f === 0 ? ['fire'] : ['left']), 4);
+  check('turning around mid-attack does not flip the swing', turn.p.meleeDir === 1);
 }
 
-console.log('\nmelee: multiple enemies in one swing (tested via the callback contract)');
+console.log('\nmelee: respects its own cooldown when held');
 {
-  // WorldScene.meleeAttack is what actually applies damage to every
-  // overlapping enemy in one call (see world-scene.js) - here we only prove
-  // Player hands it a single rect once per swing, which is the contract that
-  // makes "hits everyone in the box" possible in the first place.
   const ctx = makePlayer();
   ctx.p.equipWeapon('stick');
   run(ctx, () => [], 5);
-  run(ctx, (f) => (f === 0 ? ['fire'] : []), 1);
-  check('exactly one swing call per press', ctx.game.meleeHits.length === 1);
-}
-
-console.log('\nmelee: respects its own cooldown, not a fixed rate');
-{
-  const ctx = makePlayer();
-  ctx.p.equipWeapon('stick'); // longer cooldown than fists
-  run(ctx, () => [], 5);
-  let swings = 0;
-  const before = ctx.game.meleeHits.length;
-  for (let f = 0; f < 10; f++) {
-    ctx.input.set(['fire']); // held, not tapped
-    ctx.p.update(STEP, ctx.input, map);
-  }
-  swings = ctx.game.meleeHits.length - before;
-  // 10 frames = 1/6s; stick's cooldown (0.32s) allows at most one swing in
-  // that window.
-  check('holding fire does not swing faster than the weapon\'s cooldown allows',
-    swings === 1, `${swings} swings in 10 frames`);
+  run(ctx, () => ['fire'], frames(WEAPONS.stick.cooldown) - 2);
+  check('holding attack gives one stick swing per cooldown', ctx.game.meleeHits.length === 1,
+    `${ctx.game.meleeHits.length} swings`);
+  run(ctx, () => ['fire'], frames(WEAPONS.stick.cooldown) + 2);
+  check('...and keeps chaining at that pace', ctx.game.meleeHits.length === 2,
+    `${ctx.game.meleeHits.length} swings`);
 }
 
 const pistol = WEAPONS.pistol;
