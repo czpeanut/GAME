@@ -271,6 +271,45 @@ console.log('\nranged: the mouse cursor steers the gun');
   check('aiming turns the body to face the cursor', ctx.p.facing === -1);
 }
 
+console.log('\ngun rig: the arm follows the aim and shots leave the drawn muzzle');
+{
+  const { gunArmImage } = await import('../src/game/art.js');
+  const { GUN_ARM } = await import('../src/game/gun-rig.js');
+  const ctx = armed();
+  // Pretend the art has loaded (no images in Node) so the rig is used.
+  ctx.p.sheet.ready = true;
+  if (gunArmImage) gunArmImage.ready = true;
+  ctx.game.camera.x = 0;
+  ctx.game.camera.y = 0;
+  ctx.input.pointerActive = true;
+  check('the rig is active with a gun in hand', ctx.p._gunRigActive);
+  const reach = Math.hypot(GUN_ARM.muzzleX - GUN_ARM.pivotX, GUN_ARM.muzzleY - GUN_ARM.pivotY);
+
+  for (const [label, dx, dy] of [['ahead', 200, 0], ['up-right', 120, -120], ['down-right', 120, 120], ['behind', -200, -30]]) {
+    ctx.input.pointerX = ctx.p.gunX + dx;
+    ctx.input.pointerY = ctx.p.gunY + dy;
+    run(ctx, () => [], 2);
+    const m = ctx.p.muzzlePoint();
+    const mAng = Math.atan2(m.y - ctx.p.gunY, m.x - ctx.p.gunX);
+    const want = Math.atan2(dy, dx);
+    const diff = Math.abs(Math.atan2(Math.sin(mAng - want), Math.cos(mAng - want)));
+    check(`aiming ${label}: the drawn muzzle points toward the cursor`, diff < 0.35,
+      `muzzle at ${(mAng * 57.3).toFixed(0)}deg, cursor at ${(want * 57.3).toFixed(0)}deg`);
+    check(`aiming ${label}: the muzzle sits an arm's length from the shoulder`,
+      Math.abs(Math.hypot(m.x - ctx.p.gunX, m.y - ctx.p.gunY) - reach) < 2);
+  }
+  check('aiming behind turns the body around', ctx.p.facing === -1);
+
+  ctx.p.attackCd = 0;
+  run(ctx, () => [], 1);
+  const m = ctx.p.muzzlePoint();
+  run(ctx, () => ['fire'], 1);
+  const shot = ctx.game.shots.at(-1);
+  check('a shot starts at the drawn muzzle', shot && Math.hypot(shot.x - m.x, shot.y - m.y) < 3,
+    shot ? `${(shot.x - m.x).toFixed(1)},${(shot.y - m.y).toFixed(1)}` : 'no shot');
+  if (gunArmImage) gunArmImage.ready = false;
+}
+
 console.log('\nmelee ignores aim');
 {
   const ctx = makePlayer();

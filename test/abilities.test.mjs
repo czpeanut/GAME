@@ -45,29 +45,28 @@ console.log('\nbackward compatibility (no story attached)');
   const game = stubGame();
   check('a Player with no game.story reports every ability enabled', (() => {
     const p = new Player(0, 0, game);
-    return p.abilities.dash && p.abilities.doubleJump && p.abilities.wallJump;
+    return p.abilities.sprint && p.abilities.doubleJump && p.abilities.wallJump;
   })());
 }
 
 // Whether the player can shoot is no longer an ability flag - it is answered
 // by which weapon is equipped (see weapons.test.mjs). `abilities` now only
-// covers movement tech: dash, double jump, wall jump.
+// covers movement: sprint, double jump, wall jump.
 
-console.log('\ndash gated');
+console.log('\nsprint gated');
 {
-  const locked = new StoryState({ dash: false });
+  const locked = new StoryState({ sprint: false });
   const ctx = makeGatedPlayer(locked);
   run(ctx, () => [], 5);
-  const startX = ctx.p.x;
-  run(ctx, (p, f) => (f === 0 ? ['right', 'dash'] : ['right']), 15);
-  check('dash input is ignored while locked (no burst of speed)',
-    ctx.p.x - startX < 100, `moved ${(ctx.p.x - startX).toFixed(0)}px`);
+  run(ctx, () => ['right', 'sprint'], 40);
+  check('holding sprint while locked only jogs', Math.abs(ctx.p.body.vx - PLAYER.runSpeed) < 1,
+    `vx ${ctx.p.body.vx.toFixed(0)}`);
+  check('...and costs no stamina', ctx.p.stamina === 1);
 
-  locked.grantAbility('dash');
-  const beforeUnlock = ctx.p.x;
-  run(ctx, (p, f) => (f === 0 ? ['right', 'dash'] : ['right']), 15);
-  check('dash works immediately once granted',
-    ctx.p.x - beforeUnlock > 100, `moved ${(ctx.p.x - beforeUnlock).toFixed(0)}px`);
+  locked.grantAbility('sprint');
+  run(ctx, () => ['right', 'sprint'], 20);
+  check('sprinting works immediately once granted', Math.abs(ctx.p.body.vx - PLAYER.sprintSpeed) < 1,
+    `vx ${ctx.p.body.vx.toFixed(0)}`);
 }
 
 console.log('\ndouble jump gated');

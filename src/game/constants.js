@@ -25,7 +25,10 @@ export const PLAYER = {
   w: 20,
   h: 34,
 
-  runSpeed: 250,
+  // A jog by default - five years in a coma does not leave you sprinting.
+  // Holding sprint runs at sprintSpeed while stamina lasts.
+  runSpeed: 175,
+  sprintSpeed: 270,
   accelGround: 2400,
   accelAir: 1750,
   frictionGround: 2900,
@@ -42,10 +45,14 @@ export const PLAYER = {
   jumpBuffer: 0.12, // a jump pressed this early still fires on landing
   maxAirJumps: 1,
 
-  dashSpeed: 690,
-  dashDuration: 0.16,
-  dashCooldown: 0.42,
-  dashInvuln: 0.16, // i-frames last exactly as long as the dash
+  // Stamina runs 0..1. Sprinting drains it (full -> empty in ~2.6s); after
+  // a short breather it refills. Running it dry leaves the player winded:
+  // no sprinting until it is back up to `windedRecover`, so emptying the
+  // bar has a cost instead of just stuttering along at zero.
+  staminaDrain: 0.38,
+  staminaRegen: 0.3,
+  staminaRegenDelay: 0.6,
+  windedRecover: 0.35,
 
   wallSlideSpeed: 150,
   wallJumpVX: 330,
@@ -100,7 +107,6 @@ export const COLORS = {
 
   player: '#e8f1ff',
   playerCore: '#7fd4ff',
-  playerDash: '#9af0ff',
 
   bullet: '#ffe9a8',
   bulletGlow: '#ffb44d',

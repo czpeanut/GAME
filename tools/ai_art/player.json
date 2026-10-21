@@ -68,6 +68,18 @@
       "calib": true,
       "anchor": "feet",
       "tipFrame": 1
+    },
+    {
+      "name": "gunStand",
+      "src": "../../assets/ai/src/gun_stand.png",
+      "frames": 4,
+      "calib": true
+    },
+    {
+      "name": "gunRun",
+      "src": "../../assets/ai/src/gun_run.png",
+      "frames": 6,
+      "calib": true
     }
   ],
   "tipsOut": "../../src/game/attack-tips.js"

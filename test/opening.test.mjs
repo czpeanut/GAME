@@ -1,6 +1,6 @@
 // Playability tests for the opening chapter, mirroring level.test.mjs's
 // approach: a scripted bot proves each obstacle is actually passable rather
-// than trusting the tile coordinates by eye. The dash gate additionally
+// than trusting the tile coordinates by eye. The sprint gate additionally
 // proves the *reverse* - that the gap cannot be cheated without the ability
 // the story is supposed to gate it behind.
 
@@ -47,7 +47,7 @@ console.log('spawn and geometry');
   const { x, y } = level.playerStart;
   check('spawn is not inside geometry', !map.overlapsSolid(x, y, 20, 34));
   check('spawn has ground beneath', map.overlapsSolid(x, y + 34 + 1, 20, 2));
-  check('starts locked out of dash', !OPENING_STARTING_ABILITIES.dash);
+  check('starts unable to sprint', !OPENING_STARTING_ABILITIES.sprint);
 
   const { p } = makePlayer(x, y);
   check('starts armed with nothing but fists', p.weaponId === 'fists');
@@ -84,7 +84,8 @@ console.log('\nthe first gap needs only a jump (no story ability granted yet)');
       }
       return held;
     },
-    240
+    // A jog covers ground slower than the old full-speed run did.
+    420
   );
   check('crosses the first gap using only movement and jump',
     !result.died && col(result.maxX) > 27,
@@ -111,68 +112,58 @@ console.log('\nOld Zhou is reachable on foot from the start');
       }
       return held;
     },
-    360
+    600
   );
-  check('reaches Old Zhou without needing fire or dash',
+  check('reaches Old Zhou at a jog, unarmed',
     !result.died && result.maxX >= npc.x - 40,
     `reached col ${col(result.maxX)}, npc at col ${col(npc.x)}`);
 }
 
-console.log('\nthe dash gate actually gates the gap behind it');
+console.log('\nthe collapsed road can only be cleared at a sprint');
 {
   const GROUND_ROW = 16;
   const gapTrigger = level.triggers.find((t) => t.id === 'found_adrenaline');
-  const gapStartCol = col(gapTrigger.x) + 3; // just past the pickup, at the gap
-  // Standing on the ground, not free-falling into the run-up - a bot that
-  // starts mid-air drifts sideways while falling and can land anywhere from
-  // solid ground to straight inside the gap, which has nothing to do with
-  // whether dash can cross it.
+  const startCol = col(gapTrigger.x) - 1; // a run-up before the edge
+  // Standing on the ground, not free-falling into the run-up.
   const standingY = (GROUND_ROW - 2) * TILE + (TILE * 2 - PLAYER.h);
+  let gapEnd = startCol;
+  while (map.at(gapEnd, GROUND_ROW) >= 3 || map.at(gapEnd + 1, GROUND_ROW) < 3) gapEnd++;
+  const farSide = gapEnd + 1;
 
-  // Without dash: run and jump at the gap, repeatedly, and confirm the far
-  // side is never reached within a generous frame budget.
-  const locked = makePlayer(gapStartCol * TILE, standingY, { dash: false });
-  const jump = jumpHolder(16, 6);
-  const withoutDash = run(
-    locked,
-    (p) => {
+  // The best a player can do: take off on the very last pixel of ground and
+  // spend the double jump at the apex. If even this falls short at a jog,
+  // the gate is real - not just "the bot jumped too early".
+  const bestJump = (sprint) => {
+    let jumpedAt = -1;
+    let hold = 0;
+    let second = false;
+    return (p, f) => {
       const held = ['right'];
-      if (jump.tick()) held.push('jump');
-      else if (p.grounded && jump.ready()) {
-        jump.trigger();
+      if (sprint) held.push('sprint');
+      const edge = map.atPixel(p.body.right + 2, p.body.bottom + 4) < 3;
+      if (p.grounded && edge && jumpedAt < 0) {
+        jumpedAt = f;
+        hold = 18;
+      }
+      if (jumpedAt >= 0 && !second && f > jumpedAt + 22 && p.body.vy > -40) {
+        second = true;
+        hold = 18;
+      }
+      if (hold > 0) {
+        hold--;
         held.push('jump');
       }
       return held;
-    },
-    240
-  );
-  check('the gap cannot be crossed by jumping alone (no dash granted)',
-    withoutDash.died || col(withoutDash.maxX) < 69,
-    `reached col ${col(withoutDash.maxX)}, died=${withoutDash.died}`);
+    };
+  };
 
-  // With dash: run up to where the ground actually disappears, then dash -
-  // pressing dash immediately at spawn (two tiles short of the edge) would
-  // burn the dash's fixed 0.16s burst before ever reaching the gap, which
-  // tests "dashing into a wall" instead of "dashing across a gap".
-  const granted = makePlayer(gapStartCol * TILE, standingY, { dash: true });
-  let dashed = false;
-  const withDash = run(
-    granted,
-    (p) => {
-      const held = ['right'];
-      const aheadFloor = map.atPixel(p.body.right + 4, p.body.bottom + 4);
-      const edge = aheadFloor < 3; // not solid
-      if (p.grounded && edge && !dashed) {
-        held.push('dash');
-        dashed = true;
-      }
-      return held;
-    },
-    120
-  );
-  check('the same gap is crossable once dash is granted',
-    !withDash.died && col(withDash.maxX) >= 70,
-    `reached col ${col(withDash.maxX)}, died=${withDash.died}`);
+  const jog = run(makePlayer(startCol * TILE, standingY, { sprint: false }), bestJump(true), 300);
+  check('a perfectly timed jog jump (even holding sprint, before the adrenaline) falls short',
+    jog.died || col(jog.maxX) < farSide, `reached col ${col(jog.maxX)}, far side col ${farSide}, died=${jog.died}`);
+
+  const sprint = run(makePlayer(startCol * TILE, standingY, { sprint: true }), bestJump(true), 300);
+  check('the same jump at a sprint clears it',
+    !sprint.died && col(sprint.maxX) >= farSide + 1, `reached col ${col(sprint.maxX)}, died=${sprint.died}`);
 }
 
 console.log('\nweapons are physical pickups, not ability flags');

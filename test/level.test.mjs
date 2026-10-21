@@ -24,13 +24,14 @@ console.log('start position');
   check('spawn has ground beneath', map.overlapsSolid(x, y + 34 + 1, 20, 2));
 }
 
-// --- 2. A running jump clears the 4-tile pit at cols 24-27 ----------------
+// --- 2. A sprinting jump clears the 4-tile pit at cols 24-27 --------------
 console.log('\nsection 2: gap jump');
 {
-  // Hold right; jump when the ground ahead disappears or turns into spikes.
+  // Sprint right; jump when the ground ahead disappears or turns into spikes.
+  // A 4-tile pit is beyond a jog - level 1 has sprint from the start.
   const jump = jumpHolder(16, 6);
   const controller = (p) => {
-    const held = ['right'];
+    const held = ['right', 'sprint'];
     const aheadFloor = map.atPixel(p.body.right + 6, p.body.bottom + 4);
     const aheadWall = map.atPixel(p.body.right + 6, p.body.centerY);
     const needJump = !isSolidTile(aheadFloor) || isHazard(aheadWall) || isHazard(aheadFloor);

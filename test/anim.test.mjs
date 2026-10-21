@@ -8,7 +8,7 @@ import { ANIMS, pickPlayerAnimation, animTimeScale, FRAME_W, FRAME_H } from '../
 import { PLAYER } from '../src/game/constants.js';
 import { check, summary } from './harness.mjs';
 
-const base = { dashT: 0, hurtT: 0, wallSliding: false, grounded: true, vy: 0, vx: 0 };
+const base = { hurtT: 0, wallSliding: false, grounded: true, vy: 0, vx: 0 };
 const st = (o) => ({ ...base, ...o });
 
 console.log('\nanimation selection');
@@ -22,15 +22,13 @@ console.log('\nanimation selection');
   check('wall sliding -> wall',
     pickPlayerAnimation(st({ grounded: false, vy: 120, wallSliding: true })) === 'wall');
 
-  // Precedence: a dash beats every other state it overlaps with.
-  check('dash beats airborne',
-    pickPlayerAnimation(st({ dashT: 0.1, grounded: false, vy: 200, vx: 600 })) === 'dash');
-  check('dash beats wall slide',
-    pickPlayerAnimation(st({ dashT: 0.1, wallSliding: true, grounded: false })) === 'dash');
+  // Precedence: getting hit beats every other state it overlaps with.
   check('hurt beats running',
     pickPlayerAnimation(st({ hurtT: 0.2, vx: 240 })) === 'hurt');
-  check('dash beats hurt',
-    pickPlayerAnimation(st({ dashT: 0.1, hurtT: 0.2 })) === 'dash');
+  check('hurt beats airborne',
+    pickPlayerAnimation(st({ hurtT: 0.2, grounded: false, vy: 200 })) === 'hurt');
+  check('wall slide beats falling',
+    pickPlayerAnimation(st({ wallSliding: true, grounded: false, vy: 200 })) === 'wall');
 }
 
 console.log('\nsheet layout');

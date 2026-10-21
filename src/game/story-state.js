@@ -26,7 +26,7 @@ const SAVE_VERSION = 1;
 // once fists are always available as a fallback.
 export const DEFAULT_ABILITIES = {
   move: true,
-  dash: true,
+  sprint: true,
   doubleJump: true,
   wallJump: true,
 };
@@ -47,7 +47,7 @@ function safeStorage() {
 
 export class StoryState {
   // `startingAbilities` overrides individual entries of DEFAULT_ABILITIES -
-  // e.g. `new StoryState({ dash: false, wallJump: false })` for a level that
+  // e.g. `new StoryState({ sprint: false, wallJump: false })` for a level that
   // wants to teach those moves later rather than start with them.
   constructor(startingAbilities) {
     // Remembered so clear() can reset back to *this instance's* configured
@@ -80,7 +80,7 @@ export class StoryState {
   }
 
   // Same "did this actually change" contract as setFlag - a cutscene that
-  // grants dash wants to know whether to play the unlock fanfare.
+  // grants sprint wants to know whether to play the unlock fanfare.
   grantAbility(name) {
     if (this.abilities[name]) return false;
     this.abilities[name] = true;

@@ -65,13 +65,13 @@ console.log('\ntouch: independent from keyboard and gamepad sources');
 console.log('\ntouch: blur clears touch state like it clears keys/pad');
 {
   const input = new Input(stubTarget());
-  input.touchDown('dash');
+  input.touchDown('sprint');
   input.poll();
-  check('sanity: the touch action is held before blur', input.down('dash'));
+  check('sanity: the touch action is held before blur', input.down('sprint'));
 
   input.touch.clear(); // mirrors what the real blur listener does
   input.poll();
-  check('a cleared touch set is no longer held', !input.down('dash'));
+  check('a cleared touch set is no longer held', !input.down('sprint'));
 }
 
 process.exit(summary() ? 0 : 1);

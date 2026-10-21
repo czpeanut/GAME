@@ -9,6 +9,7 @@ import { ANIMS, SHEETS } from '../src/game/player-anims.js';
 import { WEAPONS } from '../src/game/weapons.js';
 import { ATTACK_TIPS } from '../src/game/attack-tips.js';
 import { PLAYER } from '../src/game/constants.js';
+import { GUN_ARM, GUN_SHOULDERS } from '../src/game/gun-rig.js';
 import { check, summary } from './harness.mjs';
 
 // Width/height straight from the PNG's IHDR chunk - no image library needed.
@@ -42,12 +43,12 @@ function checkGrid(label, src, frameW, frameH, anims) {
 console.log('\ngenerated sheets match their grids');
 {
   checkGrid('player (ai)', SHEETS.ai.src, SHEETS.ai.frameW, SHEETS.ai.frameH, ANIMS);
-  // The classic sheet has no attack rows (hasAttacks: false) - attacks there
-  // fall back to the standing pose plus a drawn weapon.
+  // The classic sheet has none of the AI-only rows (attacks, gun rig) -
+  // those fall back to the standing pose plus a drawn weapon there.
   const attackRows = new Set(Object.values(WEAPONS).map((w) => w.anim).filter(Boolean));
-  const baseAnims = Object.fromEntries(Object.entries(ANIMS).filter(([name]) => !attackRows.has(name)));
+  const baseAnims = Object.fromEntries(Object.entries(ANIMS).filter(([, a]) => !a.aiOnly));
   check('every melee weapon has an attack row in the AI sheet',
-    [...attackRows].every((name) => ANIMS[name]) && SHEETS.ai.hasAttacks);
+    [...attackRows].every((name) => ANIMS[name]?.aiOnly) && SHEETS.ai.hasAttacks);
   checkGrid('player (classic)', SHEETS.classic.src, SHEETS.classic.frameW, SHEETS.classic.frameH, baseAnims);
   checkGrid('walker', './assets/ai/walker.png', 48, 48, WALKER_ANIMS);
   checkGrid('zhou', './assets/ai/zhou.png', 48, 48, { idle: { row: 0, frames: 3 } });
@@ -63,6 +64,22 @@ console.log('\nattack tips (generated from the strike frames)');
     check(`${w.anim}: the tip is between the feet and the top of the head`,
       tip.y < 0 && tip.y > -PLAYER.h - 8, `y=${tip.y}`);
   }
+}
+
+console.log('\ngun rig (generated from the armless bodies and the arm sprite)');
+{
+  for (const name of ['gunStand', 'gunRun']) {
+    const pts = GUN_SHOULDERS[name];
+    check(`${name}: one shoulder per frame`, pts.length === ANIMS[name].frames, `${pts.length}`);
+    check(`${name}: every shoulder sits on the upper torso`,
+      pts.every((p) => Math.abs(p.x) < 8 && p.y < -PLAYER.h * 0.45 && p.y > -PLAYER.h - 4),
+      JSON.stringify(pts));
+  }
+  const arm = pngSize(asset('./assets/ai/gun_arm.png'));
+  check('gun_arm.png matches the rig\'s recorded size', arm.w === GUN_ARM.w && arm.h === GUN_ARM.h,
+    `${arm.w}x${arm.h} vs ${GUN_ARM.w}x${GUN_ARM.h}`);
+  check('the muzzle is at the far end from the shoulder pivot',
+    GUN_ARM.muzzleX - GUN_ARM.pivotX > GUN_ARM.w * 0.7);
 }
 
 console.log('\nbackdrop and tiles');

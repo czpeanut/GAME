@@ -2,7 +2,7 @@
 //
 // These pin down the "game feel" features that are easy to break while tuning
 // and impossible to notice in a diff: coyote time, jump buffering, variable
-// jump height, dash distance and invulnerability windows.
+// jump height, sprint and stamina, and invulnerability windows.
 
 import { LevelBuilder } from '../src/game/level.js';
 import { T } from '../src/engine/tilemap.js';
@@ -156,60 +156,54 @@ console.log('\nair jump');
     `${(startY - peak).toFixed(0)}px total`);
 }
 
-// --- Dash -----------------------------------------------------------------
-console.log('\ndash');
+// --- Sprint and stamina ---------------------------------------------------
+console.log('\nsprint and stamina');
 {
   const ctx = makePlayer(map);
   run(ctx, map, () => [], 5);
-  const startX = ctx.p.x;
+  run(ctx, map, () => ['right'], 40);
+  check('moving without sprint is a jog', Math.abs(ctx.p.body.vx - PLAYER.runSpeed) < 1,
+    ctx.p.body.vx.toFixed(0));
 
-  let invulnDuringDash = false;
-  for (let f = 0; f < 20; f++) {
-    const held = ['right'];
-    if (f === 0) held.push('dash');
-    ctx.input.set(held);
-    ctx.p.update(STEP, ctx.input, map);
-    if (ctx.p.dashT > 0 && ctx.p.invulnerable) invulnDuringDash = true;
-  }
-  const travelled = ctx.p.x - startX;
-  // A dash should cover roughly speed * duration, allowing for the exit blend.
-  const expected = PLAYER.dashSpeed * PLAYER.dashDuration;
+  run(ctx, map, () => ['right', 'sprint'], 20);
+  check('holding sprint runs faster', Math.abs(ctx.p.body.vx - PLAYER.sprintSpeed) < 1,
+    ctx.p.body.vx.toFixed(0));
+  check('sprinting drains stamina', ctx.p.stamina < 1 && ctx.p.sprinting);
+  check('sprinting grants no invulnerability (it is not a dash)', !ctx.p.invulnerable);
 
-  check('dash covers roughly the configured distance',
-    travelled > expected * 0.7 && travelled < expected * 2.2,
-    `${travelled.toFixed(0)}px, expected ~${expected.toFixed(0)}px`);
-  check('dash grants invulnerability frames', invulnDuringDash);
+  const ctx2 = makePlayer(map);
+  run(ctx2, map, () => [], 5);
+  run(ctx2, map, () => ['sprint'], 30);
+  check('holding sprint while standing still costs nothing', ctx2.p.stamina === 1);
 
-  // Dash must not be spammable while airborne. Landing legitimately refuels it,
-  // so this needs a drop long enough that the player never touches the floor
-  // during the sample - a horizontal dash zeroes vertical speed, so launching
-  // them upward does not buy any airtime.
-  const tall = (() => {
-    const tb = new LevelBuilder(40, 60);
-    tb.fill(0, 55, 39, 59, T.DIRT);
-    return tb.build('tall').map;
+  // Run it dry: sprint until winded, on a long flat stretch.
+  const long = (() => {
+    const lb = new LevelBuilder(400, 20);
+    lb.fill(0, 15, 399, 19, T.DIRT);
+    return lb.build('long').map;
   })();
+  const ctx3 = makePlayer(long);
+  run(ctx3, long, () => [], 5);
+  const drainFrames = Math.ceil(60 / PLAYER.staminaDrain) + 5;
+  run(ctx3, long, () => ['right', 'sprint'], drainFrames);
+  check('sprinting for ~1/staminaDrain seconds runs stamina dry', ctx3.p.stamina === 0,
+    ctx3.p.stamina.toFixed(2));
+  check('running dry leaves you winded', ctx3.p.winded && !ctx3.p.sprinting);
+  run(ctx3, long, () => ['right', 'sprint'], 30);
+  check('winded: still holding sprint only jogs', Math.abs(ctx3.p.body.vx - PLAYER.runSpeed) < 1);
 
-  const game2 = stubGame();
-  const p2 = new Player(5 * TILE, 2 * TILE, game2);
-  const in2 = new StubInput();
+  run(ctx3, long, () => [], Math.ceil((PLAYER.staminaRegenDelay + PLAYER.windedRecover / PLAYER.staminaRegen) * 60) + 5);
+  check('after a breather stamina refills past the winded threshold',
+    ctx3.p.stamina >= PLAYER.windedRecover, ctx3.p.stamina.toFixed(2));
+  run(ctx3, long, () => ['right', 'sprint'], 20);
+  check('...and sprinting works again', ctx3.p.sprinting);
 
-  let dashes = 0;
-  let wasDashing = false;
-  let touchedGround = false;
-  // 40 frames is well past the 0.42s (25 frame) cooldown, so this proves the
-  // dash is not refunded in mid-air merely because the cooldown expired.
-  for (let f = 0; f < 40; f++) {
-    const held = ['right'];
-    if (f % 3 === 0) held.push('dash'); // mash it
-    in2.set(held);
-    p2.update(STEP, in2, tall);
-    if (p2.grounded) touchedGround = true;
-    if (p2.dashT > 0 && !wasDashing) dashes++;
-    wasDashing = p2.dashT > 0;
-  }
-  check('dash cannot be spammed in mid-air', dashes === 1 && !touchedGround,
-    `${dashes} dash(es) in 40 frames, touchedGround=${touchedGround}`);
+  // Sprint is decided on the ground: a sprint jump keeps its pace in the air.
+  const ctx4 = makePlayer(map);
+  run(ctx4, map, () => [], 5);
+  run(ctx4, map, () => ['right', 'sprint'], 20);
+  run(ctx4, map, (p, f) => (f < 10 ? ['right', 'sprint', 'jump'] : ['right', 'sprint']), 15);
+  check('a sprint jump keeps sprint speed in the air', !ctx4.p.grounded && Math.abs(ctx4.p.body.vx - PLAYER.sprintSpeed) < 1);
 }
 
 // --- Damage and invulnerability ------------------------------------------
@@ -241,7 +235,7 @@ console.log('\nnumerical stability');
     if (f % 2 === 0) held.push('right');
     if (f % 3 === 0) held.push('left');
     if (f % 5 === 0) held.push('jump');
-    if (f % 7 === 0) held.push('dash');
+    if (f % 7 === 0) held.push('sprint');
     if (f % 11 === 0) held.push('up');
     if (f % 13 === 0) held.push('fire');
     return held;

@@ -38,9 +38,9 @@ const KEY_MAP = {
   KeyZ: 'fire',
   KeyU: 'aim',
   KeyE: 'interact',
-  KeyL: 'dash',
-  ShiftLeft: 'dash',
-  ShiftRight: 'dash',
+  KeyL: 'sprint',
+  ShiftLeft: 'sprint',
+  ShiftRight: 'sprint',
   KeyR: 'restart',
   Escape: 'pause',
   KeyP: 'pause',
@@ -51,10 +51,10 @@ const KEY_MAP = {
 // Standard gamepad button indices -> actions
 const PAD_MAP = {
   0: 'jump', // A
-  1: 'dash', // B
+  1: 'sprint', // B
   2: 'fire', // X
   3: 'interact', // Y
-  5: 'dash', // RB
+  5: 'sprint', // RB
   6: 'aim', // LT
   7: 'fire', // RT
   9: 'pause', // Start

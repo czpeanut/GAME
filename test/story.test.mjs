@@ -31,25 +31,25 @@ console.log('\nflags');
 console.log('\nabilities: unlocked by default (matches the pre-story game exactly)');
 {
   const s = new StoryState();
-  check('dash starts unlocked with no overrides', s.hasAbility('dash'));
+  check('sprint starts unlocked with no overrides', s.hasAbility('sprint'));
   check('movement is unlocked by default', s.hasAbility('move'));
-  check('every default ability is unlocked', ['dash', 'doubleJump', 'wallJump']
+  check('every default ability is unlocked', ['sprint', 'doubleJump', 'wallJump']
     .every((a) => s.hasAbility(a)));
-  check('granting an already-unlocked ability reports false', s.grantAbility('dash') === false);
+  check('granting an already-unlocked ability reports false', s.grantAbility('sprint') === false);
   check('an unknown ability name reads as false rather than throwing',
     s.hasAbility('teleport') === false);
 }
 
 console.log('\nabilities: a level can opt into a gated, taught-in-stages start');
 {
-  const s = new StoryState({ wallJump: false, dash: false });
-  check('overridden abilities start locked', !s.hasAbility('wallJump') && !s.hasAbility('dash'));
+  const s = new StoryState({ wallJump: false, sprint: false });
+  check('overridden abilities start locked', !s.hasAbility('wallJump') && !s.hasAbility('sprint'));
   check('abilities not mentioned in the override keep their default', s.hasAbility('doubleJump'));
   check('move is still unlocked even when other abilities are gated', s.hasAbility('move'));
 
-  check('grantAbility reports true the first time', s.grantAbility('dash') === true);
-  check('the ability now reads as unlocked', s.hasAbility('dash'));
-  check('granting it again reports false', s.grantAbility('dash') === false);
+  check('grantAbility reports true the first time', s.grantAbility('sprint') === true);
+  check('the ability now reads as unlocked', s.hasAbility('sprint'));
+  check('granting it again reports false', s.grantAbility('sprint') === false);
 }
 
 console.log('\nwithout storage available (plain Node, locked-down webview, etc.)');
@@ -67,10 +67,10 @@ console.log('\nsave / load round-trip (with a fake storage backend)');
 {
   globalThis.localStorage = fakeLocalStorage();
   try {
-    // Gated start, so granting wallJump (and leaving dash alone) is an
+    // Gated start, so granting wallJump (and leaving sprint alone) is an
     // observable difference in the saved data rather than something true by
     // default.
-    const a = new StoryState({ wallJump: false, dash: false });
+    const a = new StoryState({ wallJump: false, sprint: false });
     a.setFlag('woke_up');
     a.setFlag('found_note');
     a.grantAbility('wallJump');
@@ -84,7 +84,7 @@ console.log('\nsave / load round-trip (with a fake storage backend)');
     check('flags survive the round-trip',
       b.hasFlag('woke_up') && b.hasFlag('found_note') && !b.hasFlag('never_set'));
     check('abilities survive the round-trip',
-      b.hasAbility('wallJump') && !b.hasAbility('dash'));
+      b.hasAbility('wallJump') && !b.hasAbility('sprint'));
     check('checkpoint survives the round-trip',
       b.levelId === 'opening' && b.checkpointId === 'ward_exit');
   } finally {
@@ -97,19 +97,19 @@ console.log('\ncorrupted or foreign save data');
   globalThis.localStorage = fakeLocalStorage();
   try {
     localStorage.setItem('hollow-runner:save', 'not json at all {{{');
-    const s = new StoryState({ dash: false });
+    const s = new StoryState({ sprint: false });
     check('malformed JSON is rejected, not thrown', s.load() === false);
     check('rejecting a bad save leaves this instance\'s own starting state intact',
-      !s.hasAbility('dash'));
+      !s.hasAbility('sprint'));
 
     localStorage.setItem('hollow-runner:save', JSON.stringify({ v: 999, flags: ['x'] }));
     const s2 = new StoryState();
     check('a save from an incompatible future version is rejected', s2.load() === false);
 
-    localStorage.setItem('hollow-runner:save', JSON.stringify({ v: 1, abilities: { dash: true } }));
+    localStorage.setItem('hollow-runner:save', JSON.stringify({ v: 1, abilities: { sprint: true } }));
     const s3 = new StoryState();
     check('a save missing fields loads with safe fallbacks for the rest',
-      s3.load() === true && s3.hasAbility('dash') && s3.flags.size === 0 && s3.levelId === null);
+      s3.load() === true && s3.hasAbility('sprint') && s3.flags.size === 0 && s3.levelId === null);
   } finally {
     delete globalThis.localStorage;
   }
@@ -119,17 +119,17 @@ console.log('\nclear()');
 {
   globalThis.localStorage = fakeLocalStorage();
   try {
-    // Uses a gated start so granting dash is an observable change - clearing
+    // Uses a gated start so granting sprint is an observable change - clearing
     // a StoryState that started unlocked would trivially still read as
     // unlocked afterward and prove nothing.
-    const s = new StoryState({ dash: false });
+    const s = new StoryState({ sprint: false });
     s.setFlag('x');
-    s.grantAbility('dash');
+    s.grantAbility('sprint');
     s.save();
     s.clear();
     check('clear resets flags', !s.hasFlag('x'));
     check('clear resets abilities to this instance\'s own gated start, not the global default',
-      !s.hasAbility('dash'));
+      !s.hasAbility('sprint'));
     const fresh = new StoryState();
     check('clear also erases the persisted save', fresh.load() === false);
   } finally {
@@ -141,7 +141,7 @@ console.log('\ndefault ability table');
 {
   check('DEFAULT_ABILITIES has move enabled', DEFAULT_ABILITIES.move === true);
   check('DEFAULT_ABILITIES leaves everything unlocked by default',
-    DEFAULT_ABILITIES.dash && DEFAULT_ABILITIES.doubleJump && DEFAULT_ABILITIES.wallJump);
+    DEFAULT_ABILITIES.sprint && DEFAULT_ABILITIES.doubleJump && DEFAULT_ABILITIES.wallJump);
 }
 
 process.exit(summary() ? 0 : 1);

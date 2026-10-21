@@ -50,3 +50,7 @@ export const tileArt = USE_AI_ART
   ? { fill: lazyImage('./assets/ai/tile_fill.png'), cap: lazyImage('./assets/ai/tile_cap.png') }
   : null;
 export const CAP_OVERHANG = 3;
+
+// The arm-and-pistol layer of the gun rig (see gun-rig.js): drawn pointing
+// right, rotated around the shoulder toward the crosshair at runtime.
+export const gunArmImage = lazyImage('./assets/ai/gun_arm.png');

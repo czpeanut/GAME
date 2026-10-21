@@ -55,7 +55,7 @@ const game = new Game(ctx, input, loop, {
     'TALK      E          (approach a person)',
     'GUN       RIGHT-CLICK aim  ·  LEFT-CLICK fire',
     '',
-    '（射擊與衝刺，將在劇情中逐步解鎖）',
+    '（武器與奔跑，將在劇情中逐步取得）',
   ],
 });
 

@@ -51,10 +51,11 @@ export const findAdrenalineScript = {
     a: {
       lines: [
         '地上有一支廢棄的腎上腺素注射筆，指針還沒歸零。',
-        '注射之後，四肢瞬間充滿了力氣——或許能撐過眼前的難關了。',
+        '注射之後，躺了五年的雙腿終於有了力氣——現在跑得動了（按住 Shift 奔跑）。',
+        '但體力撐不了太久，跑到喘不過氣就得停下來。',
       ],
       flag: 'found_adrenaline',
-      action: (world, game) => game.story.grantAbility('dash'),
+      action: (world, game) => game.story.grantAbility('sprint'),
     },
   },
 };

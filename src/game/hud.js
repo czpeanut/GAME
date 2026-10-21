@@ -34,7 +34,7 @@ export function drawLine(ctx, text, y, color = '#8fa7d8', size = 9) {
   ctx.fillText(text, VIEW.width / 2, y);
 }
 
-// The persistent gameplay chrome: health, dash meter, level progress, score
+// The persistent gameplay chrome: health, stamina meter, level progress, score
 // and the transient message banner. Drawn every frame WorldScene is visible
 // with showHud on - which is every state except the title screen - so it
 // shows dimmed behind a pause menu or a dialogue box exactly as a player would
@@ -59,7 +59,7 @@ export class HUD {
     if (!p) return;
 
     this._health(ctx, p);
-    this._dash(ctx, p);
+    this._stamina(ctx, p);
     this._weapon(ctx, p);
     this._progress(ctx, game);
     this._score(ctx, game);
@@ -92,29 +92,26 @@ export class HUD {
     }
   }
 
-  _dash(ctx, p) {
+  // Stamina for sprinting. Hidden until the story unlocks sprinting - there
+  // is nothing to meter before then. Flashes red while winded.
+  _stamina(ctx, p) {
+    if (!p.abilities.sprint) return;
     const x = 12;
     const y = 32;
     const w = 66;
-    const ready = p.hasDash && p.dashCd <= 0;
-    const t = ready ? 1 : clamp(1 - p.dashCd / PLAYER.dashCooldown, 0, 1);
+    const blink = p.winded && Math.floor(performance.now() / 150) % 2 === 0;
 
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.fillRect(x - 1, y - 1, w + 2, 7);
-    ctx.fillStyle = '#243050';
+    ctx.fillStyle = '#2a2622';
     ctx.fillRect(x, y, w, 5);
-    ctx.fillStyle = ready ? COLORS.playerDash : '#4a6ea0';
-    if (ready) {
-      ctx.shadowColor = COLORS.playerDash;
-      ctx.shadowBlur = 8;
-    }
-    ctx.fillRect(x, y, w * t, 5);
-    ctx.shadowBlur = 0;
+    ctx.fillStyle = p.winded ? (blink ? '#ff5a5a' : '#8a3434') : p.stamina > 0.3 ? '#e8d27a' : '#e09a4a';
+    ctx.fillRect(x, y, w * clamp(p.stamina, 0, 1), 5);
 
-    ctx.font = '7px monospace';
-    ctx.fillStyle = ready ? '#bfe8ff' : '#6a7ea8';
+    ctx.font = `9px ${UI_FONT}`;
+    ctx.fillStyle = p.winded ? '#ff8a8a' : '#d8cfa8';
     ctx.textAlign = 'left';
-    ctx.fillText('DASH', x + w + 6, y + 5);
+    ctx.fillText(p.winded ? '喘氣中' : '體力', x + w + 6, y + 6);
   }
 
   // Which weapon is in hand, plus an aim-steadiness readout while holding
@@ -194,9 +191,9 @@ export class HUD {
       `pos   ${p.x.toFixed(0)}, ${p.y.toFixed(0)}`,
       `vel   ${p.body.vx.toFixed(0)}, ${p.body.vy.toFixed(0)}`,
       `grnd  ${p.grounded}  wall ${p.body.wallLeft ? 'L' : ''}${p.body.wallRight ? 'R' : ''}`,
-      `dash  ${p.dashT.toFixed(2)} cd ${Math.max(0, p.dashCd).toFixed(2)}`,
+      `stam  ${p.stamina.toFixed(2)}${p.sprinting ? ' SPRINT' : ''}${p.winded ? ' WINDED' : ''}`,
       `ents  e:${game.enemies.length} b:${game.bullets.length} p:${game.particles.activeCount}`,
-      `abil  dash:${p.abilities.dash ? 1 : 0} djmp:${p.abilities.doubleJump ? 1 : 0} wall:${p.abilities.wallJump ? 1 : 0}`,
+      `abil  sprint:${p.abilities.sprint ? 1 : 0} djmp:${p.abilities.doubleJump ? 1 : 0} wall:${p.abilities.wallJump ? 1 : 0}`,
       `wpn   ${p.weaponId}  spread ${p.spread.toFixed(3)}${p.isAiming ? ' AIM' : ''}`,
     ];
     ctx.font = '8px monospace';

@@ -113,15 +113,15 @@ const cam = await page.evaluate(() => window.game.camera.x);
 check('player moves right', reachedX > 400, `x=${reachedX.toFixed(0)}`);
 check('camera scrolls with the player', cam > 0, `camX=${cam.toFixed(0)}`);
 
-// Firing and dash may be gated by story progression in the default game
-// (they are here: the player starts unarmed, and dash is locked). This
+// Firing and sprinting may be gated by story progression in the default game
+// (they are here: the player starts unarmed and can only jog). This
 // checks the mechanisms themselves work once available, the same way
 // picking up a weapon or an adrenaline shot eventually enables them - the
 // pacing of *when* that happens is the story content's job to test
 // (test/opening.test.mjs), not this one's.
 await page.evaluate(() => {
   window.game.player.equipWeapon('pistol');
-  window.game.story.grantAbility('dash');
+  window.game.story.grantAbility('sprint');
 });
 
 // Shots are hitscan now - nothing lingers in a bullets array to inspect -
@@ -143,11 +143,12 @@ check('a shot leaves a tracer streak', await page.evaluate(() => window.game.wor
 await page.keyboard.up('KeyJ');
 
 await page.keyboard.down('KeyD');
-await page.waitForTimeout(80);
-await page.keyboard.press('ShiftLeft');
-await page.waitForTimeout(80);
-check('dash activates once granted', await page.evaluate(() => window.game.player.dashT > 0));
-await page.waitForTimeout(400);
+await page.keyboard.down('ShiftLeft');
+await page.waitForTimeout(300);
+const run = await page.evaluate(() => ({ s: window.game.player.sprinting, st: window.game.player.stamina }));
+check('holding Shift sprints once unlocked, draining stamina', run.s && run.st < 1,
+  `sprinting=${run.s} stamina=${run.st.toFixed(2)}`);
+await page.keyboard.up('ShiftLeft');
 await page.keyboard.up('KeyD');
 
 console.log('\nstability');
