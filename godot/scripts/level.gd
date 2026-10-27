@@ -81,6 +81,7 @@ func _define() -> void:
 	_building("防空洞", Rect2i(3, 38, 14, 12), 1, 0, [Rect2i(16, 43, 1, 2)])
 	_fill(Rect2i(4, 46, 3, 2), "crate")
 	_fill(Rect2i(13, 39, 2, 2), "crate")
+	_fill(Rect2i(11, 45, 1, 1), "fire")
 	player_start = _center(Vector2i(9, 43))
 
 	# B1. 廢棄派出所（鐵捲門卡一半：蹲姿鑽入）
@@ -227,7 +228,7 @@ func find_path(from: Vector2, to: Vector2) -> PackedVector2Array:
 func _layer_for(kind: String) -> int:
 	match kind:
 		"shutter": return LAYER_SHUTTER
-		"crate", "fence", "pond": return LAYER_LOW
+		"crate", "fence", "pond", "fire": return LAYER_LOW
 		_: return LAYER_WORLD
 
 func _merge(cells: Array) -> Array[Rect2i]:
@@ -357,6 +358,9 @@ func _spawn_entities() -> void:
 	_spawn_enemy("torch", Vector2i(63, 27), Vector2.RIGHT, 0.0, "乙炔混混",
 		[Vector2i(63, 27), Vector2i(70, 27), Vector2i(70, 30), Vector2i(63, 30)])
 	_spawn_enemy("torch", Vector2i(69, 34), Vector2.LEFT, 25.0, "乙炔混混")
+	var cf := Campfire.new()
+	cf.position = _center(Vector2i(11, 45)) + Vector2(0, 4)
+	actors.add_child(cf)
 	# 道具與互動
 	_spawn_item("tutorial", _center(Vector2i(6, 41)), "老伯留下的字條", "bench")
 	_spawn_item("grave", _center(Vector2i(19, 46)), "老伯的新墳", "grave")
@@ -386,13 +390,40 @@ func _draw() -> void:
 	_draw_exit()
 
 func _draw_roads() -> void:
-	var road := Color(0.16, 0.15, 0.16, 0.62)
 	for r in [Rect2i(1, 39, 98, 3), Rect2i(48, 1, 3, 54)]:
-		draw_rect(Rect2(r.position * T, r.size * T), road)
+		for x in range(r.position.x, r.end.x):
+			for y in range(r.position.y, r.end.y):
+				var c := Vector2i(x, y)
+				draw_texture_rect_region(tiles, Rect2(Vector2(c) * T, Vector2(T, T)), _tile_rect(7 if _hash(c) > 0.82 else 6))
+		# 路緣
+		var rr := Rect2(r.position * T, r.size * T)
+		draw_rect(Rect2(rr.position, Vector2(rr.size.x, 1)), Color(0.55, 0.53, 0.5, 0.55))
+		draw_rect(Rect2(rr.position + Vector2(0, rr.size.y - 1), Vector2(rr.size.x, 1)), Color(0.1, 0.1, 0.11, 0.6))
 	for x in range(2, 98, 4):
-		draw_rect(Rect2(x * T, 40 * T + 6, 20, 3), Color(0.55, 0.5, 0.25, 0.35))
+		draw_rect(Rect2(x * T, 40 * T + 6, 20, 2), Color(0.78, 0.7, 0.32, 0.5))
 	for y in range(2, 54, 4):
-		draw_rect(Rect2(49 * T + 6, y * T, 3, 20), Color(0.55, 0.5, 0.25, 0.35))
+		draw_rect(Rect2(49 * T + 7, y * T, 2, 20), Color(0.78, 0.7, 0.32, 0.5))
+	# 戶外散落物：雜草、碎石、油漬、積水、紙屑
+	for x in range(1, W - 1):
+		for y in range(1, H - 1):
+			var c := Vector2i(x, y)
+			if solid.has(c) or floors.has(c):
+				continue
+			var h := _hash(c)
+			var idx := -1
+			if h < 0.035: idx = 11
+			elif h < 0.05: idx = 12
+			elif h < 0.058: idx = 15
+			elif h > 0.992: idx = 14
+			if idx < 0:
+				continue
+			if idx == 11 and (y >= 39 and y < 42 or x >= 48 and x < 51):
+				continue
+			draw_texture_rect_region(tiles, Rect2(Vector2(c) * T, Vector2(T, T)), _tile_rect(idx))
+	for r in [Rect2i(1, 39, 98, 3), Rect2i(48, 1, 3, 54)]:
+		for i in 14:
+			var c := Vector2i(r.position.x + int(_hash(Vector2i(i, r.position.y)) * r.size.x), r.position.y + int(_hash(Vector2i(r.position.x, i)) * r.size.y))
+			draw_texture_rect_region(tiles, Rect2(Vector2(c) * T, Vector2(T, T)), _tile_rect(13 if i % 3 else 12))
 
 func _draw_floors() -> void:
 	for c in floors:
@@ -422,31 +453,63 @@ func _draw_solids() -> void:
 		var p := Vector2(c) * T
 		draw_texture_rect_region(tiles, Rect2(p, Vector2(T, T)), _tile_rect(8))
 		if solid.get(c + Vector2i(0, 1), "") != "wall":
-			draw_texture_rect_region(tiles, Rect2(p + Vector2(0, T), Vector2(T, 8)), Rect2(0, 0, 16, 8))
+			draw_texture_rect_region(tiles, Rect2(p + Vector2(0, T), Vector2(T, 10)), Rect2(16, 16, 16, 10))
+			draw_rect(Rect2(p + Vector2(0, T + 10), Vector2(T, 3)), Color(0, 0, 0, 0.35))
 	for e in solid_rects:
 		var r: Rect2i = e["rect"]
 		var rect := Rect2(r.position * T, r.size * T)
 		match e["kind"]:
 			"shelf":
-				draw_rect(rect, Color(0.42, 0.33, 0.24))
-				draw_rect(Rect2(rect.position, Vector2(rect.size.x, 3)), Color(0.58, 0.47, 0.34))
-				draw_rect(Rect2(rect.position + Vector2(0, rect.size.y), Vector2(rect.size.x, 6)), Color(0.22, 0.17, 0.13))
-				var n := int(rect.size.x / 6.0) if rect.size.x >= rect.size.y else int(rect.size.y / 6.0)
-				for i in n:
-					var o := Vector2(3 + i * 6, 6) if rect.size.x >= rect.size.y else Vector2(6, 3 + i * 6)
-					draw_rect(Rect2(rect.position + o, Vector2(3, 3)), Color(0.8, 0.45, 0.3) if i % 2 == 0 else Color(0.4, 0.6, 0.55))
+				var horiz: bool = rect.size.x >= rect.size.y
+				draw_rect(Rect2(rect.position + Vector2(1, rect.size.y), Vector2(rect.size.x - 1, 4)), Color(0, 0, 0, 0.35))
+				draw_rect(rect, Color(0.36, 0.28, 0.2))
+				draw_rect(Rect2(rect.position, Vector2(rect.size.x, 3)), Color(0.6, 0.49, 0.36))
+				draw_rect(rect, Color(0.12, 0.09, 0.07), false, 1.0)
+				var goods := [Color(0.82, 0.38, 0.28), Color(0.36, 0.62, 0.56), Color(0.88, 0.76, 0.34), Color(0.5, 0.42, 0.7)]
+				if horiz:
+					var rows := maxi(1, int((rect.size.y - 3) / 8.0))
+					for row in rows:
+						var yy := rect.position.y + 4 + row * 8
+						draw_line(Vector2(rect.position.x + 1, yy + 6), Vector2(rect.end.x - 1, yy + 6), Color(0.2, 0.15, 0.1), 1.0)
+						for i in int((rect.size.x - 2) / 5.0):
+							var gc: Color = goods[(i + row * 2) % 4]
+							draw_rect(Rect2(rect.position.x + 2 + i * 5, yy + 1, 4, 5), gc)
+							draw_rect(Rect2(rect.position.x + 2 + i * 5, yy + 1, 4, 1), gc.lightened(0.35))
+				else:
+					for i in int((rect.size.y - 2) / 5.0):
+						var gc2: Color = goods[i % 4]
+						draw_rect(Rect2(rect.position.x + 3, rect.position.y + 2 + i * 5, rect.size.x - 6, 4), gc2)
+						draw_rect(Rect2(rect.position.x + 3, rect.position.y + 2 + i * 5, rect.size.x - 6, 1), gc2.lightened(0.35))
 			"crate":
-				draw_rect(rect, Color(0.38, 0.32, 0.22))
-				draw_rect(rect, Color(0.2, 0.16, 0.1), false, 1.0)
-				draw_line(rect.position, rect.end, Color(0.2, 0.16, 0.1), 1.0)
+				draw_rect(Rect2(rect.position + Vector2(1, rect.size.y - 1), Vector2(rect.size.x, 3)), Color(0, 0, 0, 0.3))
+				draw_rect(rect, Color(0.42, 0.34, 0.22))
+				for ci in int(rect.size.x / 16.0):
+					for cj in int(rect.size.y / 16.0):
+						var o := rect.position + Vector2(ci * 16, cj * 16)
+						draw_rect(Rect2(o, Vector2(16, 16)), Color(0.12, 0.09, 0.06), false, 1.0)
+						draw_rect(Rect2(o + Vector2(1, 1), Vector2(14, 2)), Color(0.58, 0.47, 0.31))
+						draw_line(o + Vector2(2, 14), o + Vector2(14, 2), Color(0.25, 0.19, 0.12), 1.0)
+						draw_line(o + Vector2(2, 2), o + Vector2(14, 14), Color(0.25, 0.19, 0.12), 1.0)
 			"car":
-				draw_rect(rect, Color(0.36, 0.28, 0.26))
-				draw_rect(rect.grow(-3), Color(0.44, 0.34, 0.31))
-				draw_rect(Rect2(rect.position + Vector2(rect.size.x * 0.3, 4), Vector2(rect.size.x * 0.4, rect.size.y - 8)), Color(0.2, 0.26, 0.3))
-				draw_rect(Rect2(rect.position + Vector2(0, rect.size.y), Vector2(rect.size.x, 6)), Color(0.15, 0.12, 0.11))
+				draw_rect(Rect2(rect.position + Vector2(2, rect.size.y - 2), Vector2(rect.size.x, 5)), Color(0, 0, 0, 0.35))
+				draw_rect(rect, Color(0.34, 0.26, 0.24))
+				draw_rect(rect.grow(-2), Color(0.46, 0.35, 0.31))
+				draw_rect(Rect2(rect.position + Vector2(rect.size.x * 0.28, 4), Vector2(rect.size.x * 0.44, rect.size.y - 8)), Color(0.17, 0.22, 0.27))
+				draw_rect(Rect2(rect.position + Vector2(rect.size.x * 0.28, 4), Vector2(rect.size.x * 0.44, 3)), Color(0.36, 0.46, 0.54))
+				draw_rect(Rect2(rect.position, Vector2(rect.size.x, 2)), Color(0.62, 0.5, 0.45))
+				draw_rect(rect, Color(0.1, 0.07, 0.07), false, 1.0)
+				for k in 5:
+					var rp := rect.position + Vector2(fmod(float(k) * 17.3 + 5.0, rect.size.x - 4.0), fmod(float(k) * 11.1 + 3.0, rect.size.y - 4.0))
+					draw_rect(Rect2(rp, Vector2(3, 2)), Color(0.55, 0.3, 0.16, 0.8))
+				draw_rect(Rect2(rect.position + Vector2(2, rect.size.y - 1), Vector2(5, 3)), Color(0.08, 0.08, 0.08))
+				draw_rect(Rect2(rect.position + Vector2(rect.size.x - 7, rect.size.y - 1), Vector2(5, 3)), Color(0.08, 0.08, 0.08))
 			"pump":
-				draw_rect(rect, Color(0.62, 0.2, 0.18))
-				draw_rect(Rect2(rect.position + Vector2(3, 3), Vector2(rect.size.x - 6, 8)), Color(0.8, 0.8, 0.75))
+				draw_rect(Rect2(rect.position + Vector2(1, rect.size.y - 1), Vector2(rect.size.x, 4)), Color(0, 0, 0, 0.3))
+				draw_rect(rect, Color(0.66, 0.2, 0.18))
+				draw_rect(Rect2(rect.position, Vector2(rect.size.x, 3)), Color(0.86, 0.32, 0.27))
+				draw_rect(Rect2(rect.position + Vector2(3, 5), Vector2(rect.size.x - 6, 8)), Color(0.84, 0.84, 0.78))
+				draw_rect(Rect2(rect.position + Vector2(4, 6), Vector2(rect.size.x - 8, 3)), Color(0.2, 0.55, 0.3))
+				draw_rect(rect, Color(0.12, 0.05, 0.05), false, 1.0)
 			"pond":
 				draw_rect(rect, Color(0.05, 0.12, 0.12))
 				for i in range(0, int(rect.size.y), 12):

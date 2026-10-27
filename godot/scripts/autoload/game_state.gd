@@ -60,7 +60,7 @@ func _setup_input() -> void:
 		"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 		"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
 		"sprint": [KEY_SHIFT], "crouch": [KEY_C, KEY_CTRL],
-		"reload": [KEY_R], "cram": [KEY_T], "interact": [KEY_E],
+		"melee": [KEY_Q, KEY_V], "reload": [KEY_R], "cram": [KEY_T], "interact": [KEY_E],
 		"flashlight": [KEY_F], "restart": [KEY_ENTER, KEY_KP_ENTER], "pause": [KEY_ESCAPE],
 		"debug": [KEY_F3],
 	}
@@ -71,7 +71,7 @@ func _setup_input() -> void:
 			var e := InputEventKey.new()
 			e.physical_keycode = k
 			InputMap.action_add_event(action, e)
-	var mice := {"fire": MOUSE_BUTTON_LEFT, "melee": MOUSE_BUTTON_RIGHT}
+	var mice := {"fire": MOUSE_BUTTON_LEFT, "aim": MOUSE_BUTTON_RIGHT}
 	for action in mice:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)

@@ -30,9 +30,17 @@ var stab_flash := 0.0
 var hurt_flash := 0.0
 var anim_t := 0.0
 var interact_target: Node = null
+# ADS 準星（移植自 Scratched-T 的縮小準星系統）
+var aim_progress := 0.0               # 0 = 腰射，1 = 完全瞄準
+var bloom := 0.0                      # 開槍後的準星膨脹（度）
+var current_spread := 0.15            # 目前半角散布（弧度）
+var force_aim := false                # 測試用：視為按住瞄準
+var aim_locked_played := false
+var move_mult := 1.0                  # 移動方向與瞄準方向不同造成的減速倍率
 
 var sprite: Sprite2D
-var cone: PointLight2D
+var cone: PointLight2D                # 寬光錐（腰射）
+var cone_n: PointLight2D              # 窄光錐（瞄準時，射程更遠）
 var glow: PointLight2D
 var flash_light: PointLight2D
 var cam: Camera2D
@@ -64,6 +72,14 @@ func _ready() -> void:
 	cone.shadow_filter = Light2D.SHADOW_FILTER_PCF5
 	cone.position = Vector2(0, -10)
 	add_child(cone)
+	cone_n = PointLight2D.new()
+	cone_n.texture = load("res://assets/art/light_cone_narrow.png")
+	cone_n.texture_scale = 1.15
+	cone_n.energy = 0.0
+	cone_n.shadow_enabled = true
+	cone_n.shadow_filter = Light2D.SHADOW_FILTER_PCF5
+	cone_n.position = Vector2(0, -10)
+	add_child(cone_n)
 	glow = PointLight2D.new()
 	glow.texture = load("res://assets/art/light_radial.png")
 	glow.texture_scale = 0.22
@@ -74,7 +90,7 @@ func _ready() -> void:
 	add_child(glow)
 	flash_light = PointLight2D.new()
 	flash_light.texture = load("res://assets/art/light_radial.png")
-	flash_light.texture_scale = 0.4
+	flash_light.texture_scale = 0.75
 	flash_light.energy = 0.0
 	flash_light.color = Color(1.0, 0.85, 0.5)
 	flash_light.position = Vector2(0, -10)
@@ -104,13 +120,55 @@ func _physics_process(delta: float) -> void:
 		_animate(delta, false)
 		return
 	_handle_flashlight_toggle()
+	_update_aim(delta)
 	_handle_actions(delta)
 	_handle_move(delta)
 	_handle_interact(delta)
-	cone.rotation = aim_dir.angle()
-	cone.enabled = flashlight_on
-	cone.energy = 1.25 if flashlight_on else 0.0
-	flash_light.energy = muzzle_flash * 1.6
+	_update_lights()
+
+func _update_aim(delta: float) -> void:
+	var A: Dictionary = Balance.d["gun"]["aim"]
+	var aiming := force_aim or Input.is_action_pressed("aim")
+	if GameState.in_dialogue:
+		aiming = false
+	if aiming:
+		aim_progress = minf(1.0, aim_progress + delta / float(A["ramp_time"]))
+		if aim_progress >= 0.98 and not aim_locked_played:
+			aim_locked_played = true
+			Sfx.play("blip", -9.0, 1.7)
+	else:
+		aim_progress = maxf(0.0, aim_progress - delta * float(A["release_speed"]))
+		aim_locked_played = false
+	bloom = maxf(0.0, bloom - delta * float(A["bloom_recover_deg"]))
+	var mx := float(A["spread_max_deg"])
+	var mn := float(A["spread_min_deg"])
+	var deg := lerpf(mx, mn, aim_progress) + bloom
+	if velocity.length() > 5.0:
+		deg += float(A["move_spread_deg"])
+	current_spread = deg_to_rad(clampf(deg, mn, mx + float(A["bloom_cap_deg"])))
+
+func _update_lights() -> void:
+	var ang := aim_dir.angle()
+	cone.rotation = ang
+	cone_n.rotation = ang
+	var on := 1.0 if flashlight_on else 0.0
+	cone.energy = 1.25 * on * (1.0 - aim_progress)
+	cone_n.energy = 1.45 * on * aim_progress
+	flash_light.position = Vector2(0, -10) + aim_dir * 12.0
+	flash_light.energy = muzzle_flash * 2.2
+	cam.offset = -aim_dir * 2.5 * muzzle_flash
+
+func aim_move_mult(dir: Vector2, aim: Vector2) -> float:
+	## 移動方向與瞄準方向夾角越大越慢：夾角 <= free_deg 不受影響，180° 退行為 back_mult。
+	if dir == Vector2.ZERO:
+		return 1.0
+	var P: Dictionary = Balance.d["player"]["aim_penalty"]
+	var ang := rad_to_deg(absf(angle_difference(dir.angle(), aim.angle())))
+	var free := float(P["free_deg"])
+	if ang <= free:
+		return 1.0
+	var t := (ang - free) / (180.0 - free)
+	return lerpf(1.0, float(P["back_mult"]), t)
 
 func _update_timers(delta: float) -> void:
 	fire_cd = maxf(0.0, fire_cd - delta)
@@ -155,6 +213,8 @@ func _handle_move(delta: float) -> void:
 	# 鐵捲門縫：蹲著才能通過
 	var in_shutter: bool = lvl != null and lvl.in_shutter_zone(global_position)
 	collision_mask = 1 | 16 | (0 if (crouching or in_shutter) else 8)
+	move_mult = aim_move_mult(dir, aim_dir)
+	speed *= move_mult
 	velocity = dir * speed
 	move_and_slide()
 	var moving := dir != Vector2.ZERO and velocity.length() > 5.0
@@ -219,17 +279,18 @@ func try_fire() -> int:
 	match r:
 		Gun.Result.FIRED:
 			GameState.stats["shots"] += 1
-			var spread := deg_to_rad(float(G["spread_deg"]))
+			var spread := current_spread
 			var d := aim_dir.rotated(randf_range(-spread, spread))
 			var b := Bullet.new()
 			b.dir = d
 			b.speed = float(G["bullet_speed"])
-			b.max_range = float(G["bullet_range"])
+			b.max_range = float(G["bullet_range"]) * lerpf(1.0, float(G["aim"]["aimed_range_mult"]), aim_progress)
 			b.damage = float(G["damage"])
 			b.global_position = global_position + Vector2(0, -10) + aim_dir * 9.0
 			var root: Node = GameState.level.get_parent() if GameState.level != null else get_parent()
 			root.add_child(b)
 			muzzle_flash = 1.0
+			bloom += float(G["aim"]["bloom_per_shot_deg"])
 			Sfx.play("shot")
 			Acoustics.make(global_position, float(Balance.d["noise"]["gunshot"]), "gunshot")
 		Gun.Result.JAMMED:
@@ -378,13 +439,35 @@ func is_crouching() -> bool:
 func _draw() -> void:
 	# 腳下陰影
 	draw_circle(Vector2(0, -1), 5.0, Color(0, 0, 0, 0.28))
-	# 槍口火光／持槍線
 	var o := Vector2(0, -10)
-	if muzzle_flash > 0.0:
-		draw_circle(o + aim_dir * 12.0, 3.0 + muzzle_flash * 3.0, Color(1, 0.85, 0.4, muzzle_flash))
-	var gun_col := Color(0.18, 0.18, 0.2)
-	draw_line(o + aim_dir * 4.0, o + aim_dir * 11.0, gun_col, 2.0)
+	var perp := aim_dir.orthogonal()
+	# 持槍的手臂（與身體朝向分離，指向瞄準方向）
+	var hand := o + aim_dir * 8.0
+	var sleeve := Color(0.30, 0.32, 0.2)
+	draw_line(o + perp * 2.0, hand, sleeve.darkened(0.35), 3.0)
+	draw_line(o + perp * 2.0, hand, sleeve, 2.0)
+	draw_circle(hand, 1.4, Color(0.79, 0.6, 0.45))
+	# 手槍：槍身＋槍管，瞄準時槍口抬起、略長
+	var gun_col := Color(0.14, 0.14, 0.16)
+	var tip := hand + aim_dir * (6.0 + 1.5 * aim_progress)
+	draw_line(hand, tip, Color(0, 0, 0, 0.9), 3.0)
+	draw_line(hand, tip, gun_col, 2.0)
+	draw_line(hand + aim_dir * 1.0, tip - aim_dir * 1.0, Color(0.38, 0.38, 0.42), 1.0)
 	if gun.jam != Gun.Jam.NONE:
 		draw_circle(o + Vector2(0, -14), 2.5, Color(1, 0.3, 0.2))
+		draw_circle(o + Vector2(0, -14), 1.0, Color(1, 0.9, 0.7))
+	# 槍口火光：多角星芒＋亮芯
+	if muzzle_flash > 0.0:
+		var c := tip + aim_dir * 2.0
+		var pts := PackedVector2Array()
+		var n := 10
+		for k in n * 2:
+			var a := aim_dir.angle() + TAU * float(k) / float(n * 2)
+			var r := (6.0 + 5.0 * muzzle_flash) if k % 2 == 0 else 2.2
+			if k % 4 == 0:
+				r *= 1.5
+			pts.append(c + Vector2.from_angle(a) * r)
+		draw_colored_polygon(pts, Color(1, 0.8, 0.3, muzzle_flash * 0.9))
+		draw_circle(c, 2.6 * muzzle_flash + 0.8, Color(1, 0.97, 0.8, muzzle_flash))
 	if stab_flash > 0.0:
 		draw_arc(o, 16.0, aim_dir.angle() - 0.7, aim_dir.angle() + 0.7, 8, Color(1, 1, 1, stab_flash), 2.0)

@@ -53,6 +53,8 @@ func _draw_hud() -> void:
 	_bar(36, 22, 90, 5, p.stamina / float(Balance.d["player"]["stamina_max"]), Color(0.35, 0.75, 0.95))
 	# 姿態／噪音
 	var stance := "蹲姿（安靜）" if p.crouching else ("奔跑（吵）" if p.sprinting else "行走")
+	if p.move_mult < 0.98 and p.velocity.length() > 5.0:
+		stance += "　方向不一致 -%d%%" % int(round((1.0 - p.move_mult) * 100.0))
 	_text(Vector2(8, 46), stance, Color(0.85, 0.85, 0.85), 10)
 	_text(Vector2(8, 59), "手電筒 " + ("開" if p.flashlight_on else "關") + "  [F]", Color(0.85, 0.85, 0.7), 10)
 	var n := Acoustics.recent_player_noise()
@@ -62,6 +64,8 @@ func _draw_hud() -> void:
 	_text_center(18, GameState.objective, Color(1, 0.95, 0.75))
 	if GameState.in_dialogue:
 		return
+	if not GameState.game_over and not GameState.won:
+		_draw_reticle(p)
 	# 左下：槍
 	var g := p.gun
 	var base_y := 326.0
@@ -130,3 +134,46 @@ func _overlay(title: String, col: Color, hint: String) -> void:
 			rating = "安靜獵人"
 		_text_center(y + 8, "評價：" + rating, Color(1, 0.9, 0.5), 13)
 	_text_center(y + 40, hint, Color(0.8, 0.8, 0.8), 11)
+
+## 動態縮小準星（移植自 Scratched-T reticle.ts）：四向括號隨散布收攏，瞄準滿格轉金色並顯示 AIM LOCK。
+func _reticle_screen_pos(p: Player) -> Vector2:
+	if p.test_aim is Vector2:
+		return p.get_global_transform_with_canvas().origin + Vector2(0, -10) + p.aim_dir * 90.0
+	return canvas.get_local_mouse_position()
+
+func _draw_reticle(p: Player) -> void:
+	var pos := _reticle_screen_pos(p)
+	var origin := p.get_global_transform_with_canvas().origin + Vector2(0, -10)
+	var dist := pos.distance_to(origin)
+	var ap := p.aim_progress
+	var locked := ap > 0.95
+	var aiming := ap > 0.02
+	# 圓圈半徑 = 該距離下散布的實際寬度
+	var r := clampf(tan(p.current_spread) * dist, 3.0, 40.0)
+	var accent := Color(1.0, 0.88, 0.51) if locked else (Color(0.5, 0.83, 1.0) if aiming else Color(0.78, 0.86, 1.0, 0.75))
+	if p.busy_kind != "":
+		accent.a *= 0.45
+	var blen := 4.0 if locked else lerpf(6.0, 4.0, ap)
+	var shadow := Color(0, 0, 0, 0.55)
+	for pass_i in 2:
+		var off := Vector2(1, 1) if pass_i == 0 else Vector2.ZERO
+		var col := shadow if pass_i == 0 else accent
+		var c := pos + off
+		canvas.draw_line(c + Vector2(-blen, -r), c + Vector2(blen, -r), col, 1.5)
+		canvas.draw_line(c + Vector2(0, -r), c + Vector2(0, -r - 3), col, 1.5)
+		canvas.draw_line(c + Vector2(-blen, r), c + Vector2(blen, r), col, 1.5)
+		canvas.draw_line(c + Vector2(0, r), c + Vector2(0, r + 3), col, 1.5)
+		canvas.draw_line(c + Vector2(-r, -blen), c + Vector2(-r, blen), col, 1.5)
+		canvas.draw_line(c + Vector2(-r, 0), c + Vector2(-r - 3, 0), col, 1.5)
+		canvas.draw_line(c + Vector2(r, -blen), c + Vector2(r, blen), col, 1.5)
+		canvas.draw_line(c + Vector2(r, 0), c + Vector2(r + 3, 0), col, 1.5)
+	canvas.draw_arc(pos, r, 0.0, TAU, 28, Color(accent, 0.3), 1.0)
+	canvas.draw_rect(Rect2(pos - Vector2(1, 1), Vector2(2, 2)), Color(1, 0.95, 0.76) if locked else Color(0.5, 0.83, 1.0))
+	if aiming:
+		var gr := r + 7.0
+		canvas.draw_arc(pos, gr, -PI / 2.0, -PI / 2.0 + TAU * ap, 32, Color(accent, 0.9), 1.0)
+		if locked:
+			var f := ThemeDB.fallback_font
+			var w := f.get_string_size("AIM LOCK", HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x
+			canvas.draw_string(f, pos + Vector2(-w / 2.0 + 1, -r - 9), "AIM LOCK", HORIZONTAL_ALIGNMENT_LEFT, -1, 8, shadow)
+			canvas.draw_string(f, pos + Vector2(-w / 2.0, -r - 10), "AIM LOCK", HORIZONTAL_ALIGNMENT_LEFT, -1, 8, accent)

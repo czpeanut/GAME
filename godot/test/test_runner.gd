@@ -41,6 +41,7 @@ func _run() -> void:
 	await _test_backstab_and_melee()
 	await _test_gunfight()
 	await _test_jam_clear()
+	await _test_ads_and_move_penalty()
 	await _test_doors_and_rescue()
 	print("")
 	print("結果：%d 通過、%d 失敗" % [passes, fails])
@@ -234,6 +235,8 @@ func _test_gunfight() -> void:
 	player.gun.jam = Gun.Jam.NONE
 	player.global_position = e.global_position + Vector2(0, 90)
 	player.test_aim = Vector2.UP
+	player.force_aim = true
+	player.aim_progress = 1.0
 	GameState.stats["shots"] = 0
 	var guard := 0
 	while not e.dead and guard < 900:
@@ -287,3 +290,55 @@ func _test_doors_and_rescue() -> void:
 	player.global_position = Vector2(92 * 16, 7 * 16)
 	await frames(5)
 	check("獲救後抵達撤離點 → 過關", GameState.won)
+
+func _test_ads_and_move_penalty() -> void:
+	player.force_aim = false
+	player.aim_progress = 0.0
+	player.bloom = 0.0
+	# 方向不一致減速（純函式）
+	var m_fwd := player.aim_move_mult(Vector2.RIGHT, Vector2.RIGHT)
+	var m_side := player.aim_move_mult(Vector2.UP, Vector2.RIGHT)
+	var m_back := player.aim_move_mult(Vector2.LEFT, Vector2.RIGHT)
+	check("朝瞄準方向前進不減速", is_equal_approx(m_fwd, 1.0))
+	check("側移（90°）略減速：%.2f" % m_side, m_side < 1.0 and m_side > m_back)
+	check("退行（180°）降到 back_mult：%.2f" % m_back, absf(m_back - float(Balance.d["player"]["aim_penalty"]["back_mult"])) < 0.001)
+	# 實際移動距離：前進 vs 退行
+	player.test_aim = Vector2.RIGHT
+	player.global_position = Vector2(8 * 16, 43 * 16)
+	await frames(2)
+	var x0 := player.global_position.x
+	Input.action_press("move_right")
+	await frames(30)
+	Input.action_release("move_right")
+	var d_fwd := player.global_position.x - x0
+	player.global_position = Vector2(8 * 16, 43 * 16)
+	await frames(2)
+	x0 = player.global_position.x
+	Input.action_press("move_left")
+	await frames(30)
+	Input.action_release("move_left")
+	var d_back := x0 - player.global_position.x
+	check("同樣 30 幀，退行距離約為前進的 60%%（前進 %.1f／退行 %.1f）" % [d_fwd, d_back], d_back < d_fwd * 0.72 and d_back > d_fwd * 0.5)
+	# 準星：按住瞄準後散布逐步縮小，開槍後膨脹
+	await frames(60)
+	var hip := player.current_spread
+	player.force_aim = true
+	await frames(90)
+	var aimed := player.current_spread
+	check("瞄準 1.5 秒後散布明顯縮小（%.3f → %.3f rad）" % [hip, aimed], aimed < hip * 0.3 and player.aim_progress > 0.98)
+	player.gun.mag = 15
+	player.gun.jam = Gun.Jam.NONE
+	player.gun.rust = false
+	player.fire_cd = 0.0
+	player.try_fire()
+	await frames(2)
+	check("開槍後準星膨脹", player.current_spread > aimed + 0.01)
+	player.force_aim = false
+	await frames(20)
+	check("放開右鍵後瞄準度回落", player.aim_progress < 0.5)
+	# 瞄準時射程加長
+	player.force_aim = true
+	player.aim_progress = 1.0
+	check("瞄準射程為腰射的 1.25 倍", absf(lerpf(1.0, float(Balance.d["gun"]["aim"]["aimed_range_mult"]), player.aim_progress) - 1.25) < 0.001)
+	player.force_aim = false
+	player.aim_progress = 0.0

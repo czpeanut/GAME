@@ -35,8 +35,10 @@ func _ready() -> void:
 	actors.add_child(player)
 	player.died.connect(_on_died)
 	_apply_cam_limits()
+	add_child(DustMotes.new())
 	hud = Hud.new()
 	add_child(hud)
+	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	dlg = DialogueBox.new()
 	add_child(dlg)
 	_apply_dev_args()
@@ -68,6 +70,8 @@ func _apply_dev_args() -> void:
 		player.cam.limit_top = -10000
 		player.cam.limit_right = 10000
 		player.cam.limit_bottom = 10000
+	if args.has("ads"):
+		player.force_aim = true
 	if args.has("crouch"):
 		Input.action_press("crouch")
 	if args.has("flashlight_off"):
@@ -98,6 +102,11 @@ func _process(delta: float) -> void:
 		for b in level.buildings:
 			b["roof"].visible = false
 	warn_t = maxf(0.0, warn_t - delta)
+	if args.has("fire") and frame_count == int(args.get("frames", "30")) - 3:
+		player.gun.jam = Gun.Jam.NONE
+		player.gun.rust = false
+		player.try_fire()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if (GameState.game_over or GameState.won) else Input.MOUSE_MODE_HIDDEN
 	if not GameState.game_over and not GameState.won and level.in_exit(player.global_position):
 		if GameState.flags["zhiqing_rescued"]:
 			GameState.won = true
@@ -107,6 +116,7 @@ func _process(delta: float) -> void:
 	if (GameState.game_over or GameState.won) and Input.is_action_just_pressed("restart"):
 		get_tree().reload_current_scene()
 	if Input.is_action_just_pressed("pause"):
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		get_tree().change_scene_to_file("res://scenes/title.tscn")
 	if args.has("shot") and frame_count >= int(args.get("frames", "30")):
 		_save_shot(String(args["shot"]))
