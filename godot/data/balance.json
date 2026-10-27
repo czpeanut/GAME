@@ -1,0 +1,31 @@
+{
+  "_note": "所有數值集中於此，之後可由試算表匯出覆蓋。距離單位為像素（1 格 = 16 px）。",
+  "player": {
+    "hp": 100, "walk": 70, "sprint": 118, "crouch": 36,
+    "stamina_max": 3.0, "stamina_regen": 1.2, "stamina_cooldown": 0.8,
+    "step_walk": 0.46, "step_sprint": 0.30, "step_crouch": 0.62
+  },
+  "noise": {
+    "walk": 40, "sprint": 112, "crouch": 0, "glass": 192, "glass_crouch_mult": 0.5,
+    "shutter": 64, "gunshot": 480, "rack": 128, "reload": 64, "pry": 80,
+    "melee": 64, "backstab": 20, "freezer_door": 80, "jam_click": 40,
+    "wall_mult": 0.5
+  },
+  "gun": {
+    "name": "T65K2", "mag_size": 15, "cram_size": 20,
+    "start_mag": 15, "start_reserve": 30,
+    "fire_delay": 0.18, "damage": 35, "spread_deg": 2.5, "bullet_speed": 720, "bullet_range": 520,
+    "jam": { "base": 0.02, "rust": 0.12, "overload": 0.60 },
+    "clear_time": 1.0, "reload_time": 1.4, "cram_time": 2.0, "unload_time": 0.8
+  },
+  "melee": { "name": "絕緣一字螺絲起子", "range": 26, "damage": 12, "cooldown": 0.5, "backstab_dot": 0.2 },
+  "enemy": {
+    "hp": 60, "walk": 38, "chase": 80,
+    "vision_range": 150, "vision_fov": 75, "close_sense": 20,
+    "crouch_vision_mult": 0.55, "flashlight_vision_mult": 1.35,
+    "detect_time": 0.5, "detect_time_crouch": 0.9,
+    "attack_range": 18, "attack_damage": 18, "attack_windup": 0.6, "attack_cooldown": 1.0,
+    "investigate_time": 3.5, "search_time": 4.0, "shout_radius": 130
+  },
+  "interact": { "range": 24, "pry_time": 2.0 }
+}
