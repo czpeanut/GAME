@@ -18,7 +18,8 @@ func _ready() -> void:
 	sprite.texture = load("res://assets/art/char_zhiqing.png")
 	sprite.hframes = 3
 	sprite.vframes = 4
-	sprite.offset = Vector2(0, -12)
+	sprite.offset = Vector2(0, -24)
+	sprite.scale = Vector2(0.5, 0.5)
 	add_child(sprite)
 	sprite.modulate = Color(0.85, 0.95, 1.1)
 

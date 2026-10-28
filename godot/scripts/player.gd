@@ -75,7 +75,8 @@ func _ready() -> void:
 	sprite.texture = load(SHEET)
 	sprite.hframes = 3
 	sprite.vframes = 4
-	sprite.offset = Vector2(0, -12)
+	sprite.offset = Vector2(0, -24)
+	sprite.scale = Vector2(0.5, 0.5)     # 2 倍解析度美術
 	add_child(sprite)
 	cone = PointLight2D.new()
 	cone.texture = load("res://assets/art/light_cone.png")
@@ -343,12 +344,12 @@ func _animate(delta: float, moving: bool) -> void:
 		sprite.position = Vector2(0, -8)
 		sprite.offset = Vector2.ZERO
 		sprite.rotation = pr * TAU * (1.0 if roll_dir.x >= 0.0 else -1.0) * 1.0
-		sprite.scale = Vector2(1, 0.8)
+		sprite.scale = Vector2(0.5, 0.4)
 	else:
 		sprite.position = Vector2.ZERO
 		sprite.rotation = 0.0
-		sprite.scale = Vector2(1, 0.82) if crouching else Vector2.ONE
-		sprite.offset = Vector2(0, -12 if not crouching else -10)
+		sprite.scale = Vector2(0.5, 0.41) if crouching else Vector2(0.5, 0.5)
+		sprite.offset = Vector2(0, -24 if not crouching else -20)
 	sprite.modulate = Color(1, 0.55, 0.55) if hurt_flash > 0.0 else Color.WHITE
 	queue_redraw()
 

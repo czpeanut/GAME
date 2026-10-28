@@ -51,7 +51,8 @@ func _ready() -> void:
 	sprite.texture = load("res://assets/art/char_%s.png" % ("torch" if kind == "torch" else "thug"))
 	sprite.hframes = 3
 	sprite.vframes = 4
-	sprite.offset = Vector2(0, -12)
+	sprite.offset = Vector2(0, -24)
+	sprite.scale = Vector2(0.5, 0.5)
 	add_child(sprite)
 	# 受擊框：整個身體（比腳底碰撞圈大很多），子彈打這個
 	hurtbox = Area2D.new()
@@ -326,7 +327,7 @@ func _die(silent: bool) -> void:
 	if not silent:
 		GameState.stats["kills_loud"] += 1
 	sprite.rotation = deg_to_rad(90)
-	sprite.offset = Vector2(0, -4)
+	sprite.offset = Vector2(0, -8)
 	sprite.modulate = Color(0.55, 0.5, 0.5)
 	sprite.frame = 0
 	z_index = -1

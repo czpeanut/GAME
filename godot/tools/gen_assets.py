@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Generate placeholder pixel art + light textures + synth SFX for the graybox prototype.
 Everything here is procedural so it can be regenerated or replaced with real art later.
-Usage: python3 godot/tools/gen_assets.py
+Usage: python3 godot/tools/gen_assets.py && python3 godot/tools/gen_art_hd.py
+(本檔只負責光照貼圖與音效；美術由 gen_art_hd.py 產生)
 """
 import math, os, random, wave
 import numpy as np
@@ -112,7 +113,8 @@ PALS = {
     "torch":   dict(skin=hexc("#a97a58"), hair=hexc("#241c18"), top=hexc("#c27a2c"), pants=hexc("#3c3a34"), boots=hexc("#1e1b1b"), cap=hexc("#d8d2c4"), sleeve=hexc("#c27a2c"), belt=hexc("#2b2a22"), pack=hexc("#7a7a80")),
     "zhiqing": dict(skin=hexc("#e0b896"), hair=hexc("#2a2224"), top=hexc("#59635a"), pants=hexc("#3a3f4a"), boots=hexc("#2a2626"), sleeve=hexc("#59635a"), belt=hexc("#c9c3b8"), earring=True, collar=hexc("#7d8a7f")),
 }
-for name, pal in PALS.items():
+if False:
+  for name, pal in PALS.items():
     sheet = Image.new("RGBA", (16 * 3, 24 * 4), (0, 0, 0, 0))
     for d in range(4):
         for f in range(3):
@@ -192,11 +194,11 @@ g = Image.new("RGBA", (16, 16), (0,0,0,0)); d = ImageDraw.Draw(g); d.ellipse([2,
 g = Image.new("RGBA", (16, 16), (0,0,0,0)); d = ImageDraw.Draw(g); d.ellipse([1,4,14,12], fill=(60,86,104,120)); d.arc([3,5,11,10], 200, 340, fill=(150,190,210,180)); put(14, g)
 g = Image.new("RGBA", (16, 16), (0,0,0,0)); d = ImageDraw.Draw(g)
 d.polygon([(3,10),(8,8),(10,12),(5,13)], fill=(205,198,180,255), outline=(70,64,56,255)); d.polygon([(9,4),(13,5),(12,8),(8,7)], fill=(190,184,168,255), outline=(70,64,56,255)); put(15, g)
-atlas.save(os.path.join(ART, "tiles.png"))
+pass  # 地磚、角色、圖示改由 gen_art_hd.py 產生（2 倍解析度）
 
 # ---------------------------------------------------------------- small item icons (12x12)
 def icon(draw_fn, name):
-    im = Image.new("RGBA", (12, 12), (0, 0, 0, 0)); d = ImageDraw.Draw(im); draw_fn(d); im.save(os.path.join(ART, f"icon_{name}.png"))
+    im = Image.new("RGBA", (12, 12), (0, 0, 0, 0)); d = ImageDraw.Draw(im); draw_fn(d)
 icon(lambda d: (d.rectangle([3,3,8,10], fill=hexc("#b8b03a"), outline=OUTLINE), d.rectangle([5,1,6,3], fill=hexc("#8a8a8a"), outline=OUTLINE)), "oil")
 icon(lambda d: (d.rectangle([2,2,9,10], fill=hexc("#d8d2c4"), outline=OUTLINE), d.line([(4,5),(7,5)], fill=OUTLINE), d.line([(4,7),(7,7)], fill=OUTLINE)), "doc")
 icon(lambda d: (d.rectangle([2,4,9,7], fill=hexc("#6fe08a"), outline=OUTLINE),), "glow")

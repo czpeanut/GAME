@@ -34,7 +34,7 @@ func _draw() -> void:
 		return
 	var bob := sin(t * 2.5) * 1.2
 	draw_circle(Vector2(0, 0), 7.0, Color(1, 1, 0.8, 0.10))
-	draw_texture(icon, Vector2(-6, -12 + bob))
+	draw_texture_rect(icon, Rect2(-6, -12 + bob, 12, 12), false)
 
 func on_hold_start(_p: Node) -> void:
 	if kind == "lock_door":

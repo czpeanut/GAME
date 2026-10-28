@@ -24,6 +24,7 @@ var exit_rect := Rect2i(90, 5, 6, 5)
 var player_start := Vector2.ZERO
 var astar: AStarGrid2D
 var tiles: Texture2D
+var props := {}
 var actors: Node2D
 var enemies: Array[Enemy] = []
 var companion: Node2D = null
@@ -31,6 +32,8 @@ var companion: Node2D = null
 func setup(actors_node: Node2D) -> void:
 	actors = actors_node
 	tiles = load("res://assets/art/tiles.png")
+	for k in ["shelf_h", "shelf_v", "crate", "car_h", "car_v", "pump"]:
+		props[k] = load("res://assets/art/prop_%s.png" % k)
 	z_index = -10
 	_define()
 	_build_astar()
@@ -297,13 +300,13 @@ func _build_collision() -> void:
 
 func _build_ground() -> void:
 	var g := Sprite2D.new()
-	g.texture = load("res://assets/reused/ground_rubble.png")
+	g.texture = load("res://assets/art/ground.png")
 	g.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	g.region_enabled = true
-	g.region_rect = Rect2(0, 0, W * T, H * T)
+	g.region_rect = Rect2(0, 0, W * T * 2, H * T * 2)
+	g.scale = Vector2(0.5, 0.5)
 	g.centered = false
 	g.z_index = -1
-	g.modulate = Color(0.9, 0.9, 0.95)
 	add_child(g)
 
 func _build_roofs() -> void:
@@ -375,8 +378,10 @@ func _spawn_entities() -> void:
 	companion = comp
 
 # ------------------------------------------------------------------ 繪製
+const TS := 32   # 圖集每格像素（2 倍解析度）
+
 func _tile_rect(i: int) -> Rect2:
-	return Rect2((i % 8) * 16, (i / 8) * 16, 16, 16)
+	return Rect2((i % 8) * TS, (i / 8) * TS, TS, TS)
 
 func _hash(c: Vector2i) -> float:
 	var h := (c.x * 73856093) ^ (c.y * 19349663)
@@ -430,7 +435,9 @@ func _draw_floors() -> void:
 		var id: int = floors[c]
 		var idx := 0
 		match id:
-			0: idx = 0 if _hash(c) < 0.8 else 1
+			0:
+				var hv := _hash(c)
+				idx = 0 if hv < 0.45 else (19 if hv < 0.7 else (20 if hv < 0.9 else 1))
 			1: idx = 2 if (c.x + c.y) % 2 == 0 else 3
 			2: idx = 4
 			3: idx = 5
@@ -453,63 +460,30 @@ func _draw_solids() -> void:
 		var p := Vector2(c) * T
 		draw_texture_rect_region(tiles, Rect2(p, Vector2(T, T)), _tile_rect(8))
 		if solid.get(c + Vector2i(0, 1), "") != "wall":
-			draw_texture_rect_region(tiles, Rect2(p + Vector2(0, T), Vector2(T, 10)), Rect2(16, 16, 16, 10))
+			var hw := _hash(c + Vector2i(7, 3))
+			var wf := 16 if hw < 0.7 else (17 if hw < 0.82 else 18)
+			draw_texture_rect_region(tiles, Rect2(p + Vector2(0, T), Vector2(T, 10)), Rect2(_tile_rect(wf).position, Vector2(TS, 20)))
 			draw_rect(Rect2(p + Vector2(0, T + 10), Vector2(T, 3)), Color(0, 0, 0, 0.35))
 	for e in solid_rects:
 		var r: Rect2i = e["rect"]
 		var rect := Rect2(r.position * T, r.size * T)
 		match e["kind"]:
 			"shelf":
-				var horiz: bool = rect.size.x >= rect.size.y
-				draw_rect(Rect2(rect.position + Vector2(1, rect.size.y), Vector2(rect.size.x - 1, 4)), Color(0, 0, 0, 0.35))
-				draw_rect(rect, Color(0.36, 0.28, 0.2))
-				draw_rect(Rect2(rect.position, Vector2(rect.size.x, 3)), Color(0.6, 0.49, 0.36))
-				draw_rect(rect, Color(0.12, 0.09, 0.07), false, 1.0)
-				var goods := [Color(0.82, 0.38, 0.28), Color(0.36, 0.62, 0.56), Color(0.88, 0.76, 0.34), Color(0.5, 0.42, 0.7)]
-				if horiz:
-					var rows := maxi(1, int((rect.size.y - 3) / 8.0))
-					for row in rows:
-						var yy := rect.position.y + 4 + row * 8
-						draw_line(Vector2(rect.position.x + 1, yy + 6), Vector2(rect.end.x - 1, yy + 6), Color(0.2, 0.15, 0.1), 1.0)
-						for i in int((rect.size.x - 2) / 5.0):
-							var gc: Color = goods[(i + row * 2) % 4]
-							draw_rect(Rect2(rect.position.x + 2 + i * 5, yy + 1, 4, 5), gc)
-							draw_rect(Rect2(rect.position.x + 2 + i * 5, yy + 1, 4, 1), gc.lightened(0.35))
-				else:
-					for i in int((rect.size.y - 2) / 5.0):
-						var gc2: Color = goods[i % 4]
-						draw_rect(Rect2(rect.position.x + 3, rect.position.y + 2 + i * 5, rect.size.x - 6, 4), gc2)
-						draw_rect(Rect2(rect.position.x + 3, rect.position.y + 2 + i * 5, rect.size.x - 6, 1), gc2.lightened(0.35))
+				_draw_shelf(rect)
 			"crate":
-				draw_rect(Rect2(rect.position + Vector2(1, rect.size.y - 1), Vector2(rect.size.x, 3)), Color(0, 0, 0, 0.3))
-				draw_rect(rect, Color(0.42, 0.34, 0.22))
-				for ci in int(rect.size.x / 16.0):
-					for cj in int(rect.size.y / 16.0):
-						var o := rect.position + Vector2(ci * 16, cj * 16)
-						draw_rect(Rect2(o, Vector2(16, 16)), Color(0.12, 0.09, 0.06), false, 1.0)
-						draw_rect(Rect2(o + Vector2(1, 1), Vector2(14, 2)), Color(0.58, 0.47, 0.31))
-						draw_line(o + Vector2(2, 14), o + Vector2(14, 2), Color(0.25, 0.19, 0.12), 1.0)
-						draw_line(o + Vector2(2, 2), o + Vector2(14, 14), Color(0.25, 0.19, 0.12), 1.0)
+				for ci in int(rect.size.x / T):
+					for cj in int(rect.size.y / T):
+						var o := rect.position + Vector2(ci * T, cj * T)
+						draw_rect(Rect2(o + Vector2(1, T - 1), Vector2(T, 4)), Color(0, 0, 0, 0.3))
+						draw_texture_rect(props["crate"], Rect2(o, Vector2(T, T + 2)), false)
 			"car":
-				draw_rect(Rect2(rect.position + Vector2(2, rect.size.y - 2), Vector2(rect.size.x, 5)), Color(0, 0, 0, 0.35))
-				draw_rect(rect, Color(0.34, 0.26, 0.24))
-				draw_rect(rect.grow(-2), Color(0.46, 0.35, 0.31))
-				draw_rect(Rect2(rect.position + Vector2(rect.size.x * 0.28, 4), Vector2(rect.size.x * 0.44, rect.size.y - 8)), Color(0.17, 0.22, 0.27))
-				draw_rect(Rect2(rect.position + Vector2(rect.size.x * 0.28, 4), Vector2(rect.size.x * 0.44, 3)), Color(0.36, 0.46, 0.54))
-				draw_rect(Rect2(rect.position, Vector2(rect.size.x, 2)), Color(0.62, 0.5, 0.45))
-				draw_rect(rect, Color(0.1, 0.07, 0.07), false, 1.0)
-				for k in 5:
-					var rp := rect.position + Vector2(fmod(float(k) * 17.3 + 5.0, rect.size.x - 4.0), fmod(float(k) * 11.1 + 3.0, rect.size.y - 4.0))
-					draw_rect(Rect2(rp, Vector2(3, 2)), Color(0.55, 0.3, 0.16, 0.8))
-				draw_rect(Rect2(rect.position + Vector2(2, rect.size.y - 1), Vector2(5, 3)), Color(0.08, 0.08, 0.08))
-				draw_rect(Rect2(rect.position + Vector2(rect.size.x - 7, rect.size.y - 1), Vector2(5, 3)), Color(0.08, 0.08, 0.08))
+				var horiz := rect.size.x >= rect.size.y
+				var tx: Texture2D = props["car_h"] if horiz else props["car_v"]
+				draw_rect(Rect2(rect.position + Vector2(3, rect.size.y - 2), Vector2(rect.size.x, 6)), Color(0, 0, 0, 0.35))
+				draw_texture_rect(tx, Rect2(rect.position, Vector2(rect.size.x, rect.size.y + 4)), false)
 			"pump":
-				draw_rect(Rect2(rect.position + Vector2(1, rect.size.y - 1), Vector2(rect.size.x, 4)), Color(0, 0, 0, 0.3))
-				draw_rect(rect, Color(0.66, 0.2, 0.18))
-				draw_rect(Rect2(rect.position, Vector2(rect.size.x, 3)), Color(0.86, 0.32, 0.27))
-				draw_rect(Rect2(rect.position + Vector2(3, 5), Vector2(rect.size.x - 6, 8)), Color(0.84, 0.84, 0.78))
-				draw_rect(Rect2(rect.position + Vector2(4, 6), Vector2(rect.size.x - 8, 3)), Color(0.2, 0.55, 0.3))
-				draw_rect(rect, Color(0.12, 0.05, 0.05), false, 1.0)
+				draw_rect(Rect2(rect.position + Vector2(2, rect.size.y - 1), Vector2(rect.size.x, 4)), Color(0, 0, 0, 0.3))
+				draw_texture_rect(props["pump"], Rect2(rect.position, Vector2(rect.size.x, rect.size.y + 4)), false)
 			"pond":
 				draw_rect(rect, Color(0.05, 0.12, 0.12))
 				for i in range(0, int(rect.size.y), 12):
@@ -531,6 +505,29 @@ func _draw_solids() -> void:
 				draw_rect(rect, Color(0.78, 0.86, 0.9))
 				draw_rect(rect.grow(-2), Color(0.64, 0.74, 0.8))
 				draw_rect(Rect2(rect.position + Vector2(rect.size.x * 0.5 - 1, 4), Vector2(2, 6)), Color(0.3, 0.3, 0.3))
+
+func _draw_shelf(rect: Rect2) -> void:
+	var nx := int(rect.size.x / T)
+	var ny := int(rect.size.y / T)
+	draw_rect(Rect2(rect.position + Vector2(2, rect.size.y), Vector2(rect.size.x, 4)), Color(0, 0, 0, 0.35))
+	if nx >= ny:
+		var tx: Texture2D = props["shelf_h"]
+		for j in ny:
+			for i in nx:
+				var seg := 1
+				if i == 0: seg = 0
+				elif i == nx - 1: seg = 2
+				var front := 4.0 if j == ny - 1 else 0.0
+				draw_texture_rect_region(tx, Rect2(rect.position + Vector2(i * T, j * T), Vector2(T, T + front)), Rect2(seg * 32, 0, 32, 32 + front * 2.0))
+	else:
+		var tv: Texture2D = props["shelf_v"]
+		for i in nx:
+			for j in ny:
+				var seg := 1
+				if j == 0: seg = 0
+				elif j == ny - 1: seg = 2
+				var front := 4.0 if j == ny - 1 else 0.0
+				draw_texture_rect_region(tv, Rect2(rect.position + Vector2(i * T, j * T), Vector2(T, T + front)), Rect2(0, seg * 32, 32, 32 + front * 2.0))
 
 func _draw_exit() -> void:
 	var rect := Rect2(exit_rect.position * T, exit_rect.size * T)
