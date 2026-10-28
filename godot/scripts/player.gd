@@ -45,6 +45,9 @@ var roll_t := 0.0
 var roll_total := 0.28
 var roll_cd := 0.0
 var roll_dir := Vector2.RIGHT
+var aiming := false                   # Helldivers 式舉槍狀態
+var raise_t := 0.0                    # 開槍後維持舉槍的秒數
+var laser_len := 0.0                  # 雷射瞄準線長度
 var still_t := 0.0                    # 站定秒數（準星自動收斂）
 var move_mult := 1.0                  # 移動方向與瞄準方向不同造成的減速倍率
 
@@ -109,6 +112,8 @@ func _ready() -> void:
 	cam.position_smoothing_enabled = true
 	cam.position_smoothing_speed = 9.0
 	cam.position = Vector2(0, -10)
+	var z := float(Balance.d["feel"]["zoom"])
+	cam.zoom = Vector2(z, z)
 	add_child(cam)
 
 func _aim_vector() -> Vector2:
@@ -122,7 +127,7 @@ func _physics_process(delta: float) -> void:
 	if GameState.game_over or GameState.won:
 		velocity = Vector2.ZERO
 		return
-	aim_dir = _aim_vector()
+	_update_aim_dir(delta)
 	_update_facing()
 	_update_timers(delta)
 	_update_camera(delta)
@@ -137,11 +142,28 @@ func _physics_process(delta: float) -> void:
 	_handle_interact(delta)
 	_update_lights()
 
+## Helldivers 式：不舉槍時身體朝移動方向；右鍵或開槍即舉槍，
+## 舉槍時身體以有限轉速轉向滑鼠（武器重量感），子彈沿身體實際朝向射出。
+func _update_aim_dir(delta: float) -> void:
+	var M: Dictionary = Balance.d["player"]["aim_mode"]
+	var firing := Input.is_action_pressed("fire") and not GameState.in_dialogue
+	if firing:
+		raise_t = float(M["hold_after_fire"])
+	raise_t = maxf(0.0, raise_t - delta)
+	aiming = (force_aim or Input.is_action_pressed("aim") or firing or raise_t > 0.0) and roll_t <= 0.0 and not GameState.in_dialogue
+	if test_aim is Vector2:
+		aim_dir = (test_aim as Vector2).normalized()
+		return
+	var target := aim_dir
+	if aiming:
+		target = _aim_vector()
+	elif velocity.length() > 12.0:
+		target = velocity.normalized()
+	var rate := deg_to_rad(float(M["turn_deg"]) if aiming else float(M["turn_free_deg"]))
+	aim_dir = Vector2.from_angle(rotate_toward(aim_dir.angle(), target.angle(), rate * delta))
+
 func _update_aim(delta: float) -> void:
 	var A: Dictionary = Balance.d["gun"]["aim"]
-	var aiming := force_aim or Input.is_action_pressed("aim")
-	if GameState.in_dialogue:
-		aiming = false
 	if aiming:
 		aim_progress = minf(1.0, aim_progress + delta / float(A["ramp_time"]))
 		if aim_progress >= 0.98 and not aim_locked_played:
@@ -172,9 +194,21 @@ func _update_lights() -> void:
 	cone_n.rotation = ang
 	var on := 1.0 if flashlight_on else 0.0
 	cone.energy = 1.25 * on * (1.0 - aim_progress)
+	_update_laser()
 	cone_n.energy = 1.45 * on * aim_progress
 	flash_light.position = Vector2(0, -10) + aim_dir * 12.0
 	flash_light.energy = muzzle_flash * 2.2
+
+func _update_laser() -> void:
+	laser_len = 0.0
+	if not aiming:
+		return
+	var o := global_position + Vector2(0, -10)
+	var rng := float(Balance.d["gun"]["bullet_range"]) * lerpf(1.0, float(Balance.d["gun"]["aim"]["aimed_range_mult"]), aim_progress)
+	var q := PhysicsRayQueryParameters2D.create(o, o + aim_dir * rng, 1 | 32)
+	q.collide_with_areas = true
+	var hit := get_world_2d().direct_space_state.intersect_ray(q)
+	laser_len = rng if hit.is_empty() else o.distance_to(hit["position"])
 
 func add_trauma(a: float) -> void:
 	trauma = minf(1.0, trauma + a)
@@ -240,7 +274,7 @@ func _handle_move(delta: float) -> void:
 	var dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var lvl: Node = GameState.level
 	crouching = Input.is_action_pressed("crouch")
-	var wants_sprint := Input.is_action_pressed("sprint") and not crouching and dir != Vector2.ZERO
+	var wants_sprint := Input.is_action_pressed("sprint") and not crouching and not aiming and dir != Vector2.ZERO
 	stamina_lock = maxf(0.0, stamina_lock - delta)
 	sprinting = wants_sprint and stamina > 0.0 and stamina_lock <= 0.0
 	if sprinting:
@@ -256,7 +290,9 @@ func _handle_move(delta: float) -> void:
 	# 鐵捲門縫：蹲著才能通過
 	var in_shutter: bool = lvl != null and lvl.in_shutter_zone(global_position)
 	collision_mask = 1 | 16 | (0 if (crouching or in_shutter) else 8)
-	move_mult = aim_move_mult(dir, aim_dir)
+	move_mult = 1.0
+	if aiming:
+		move_mult = float(P["aim_mode"]["walk_mult"]) * aim_move_mult(dir, aim_dir)
 	speed *= move_mult
 	if roll_t > 0.0:
 		var pr := 1.0 - roll_t / maxf(roll_total, 0.01)
@@ -349,7 +385,9 @@ func try_roll() -> void:
 func try_fire() -> int:
 	if busy_kind != "" or fire_cd > 0.0 or roll_t > 0.0:
 		return Gun.Result.BUSY
-	aim_dir = _aim_vector()
+	if test_aim is Vector2:
+		aim_dir = (test_aim as Vector2).normalized()
+	raise_t = maxf(raise_t, float(Balance.d["player"]["aim_mode"]["hold_after_fire"]))
 	var G: Dictionary = Balance.d["gun"]
 	fire_cd = float(G["fire_delay"])
 	var r := gun.fire()
@@ -363,7 +401,7 @@ func try_fire() -> int:
 			b.speed = float(G["bullet_speed"])
 			b.max_range = float(G["bullet_range"]) * lerpf(1.0, float(G["aim"]["aimed_range_mult"]), aim_progress)
 			b.damage = float(G["damage"])
-			b.global_position = global_position + Vector2(0, -10) + aim_dir * 9.0
+			b.global_position = global_position + Vector2(0, -10)
 			var root: Node = GameState.level.get_parent() if GameState.level != null else get_parent()
 			root.add_child(b)
 			muzzle_flash = 1.0
@@ -440,7 +478,8 @@ func busy_ratio() -> float:
 func try_melee() -> void:
 	if melee_cd > 0.0 or busy_kind != "" or roll_t > 0.0:
 		return
-	aim_dir = _aim_vector()
+	if test_aim is Vector2:
+		aim_dir = (test_aim as Vector2).normalized()
 	var M: Dictionary = Balance.d["melee"]
 	melee_cd = float(M["cooldown"])
 	stab_flash = 1.0
@@ -528,6 +567,12 @@ func _draw() -> void:
 	var o := Vector2(0, -10)
 	if roll_t > 0.0:
 		return
+	if laser_len > 14.0:
+		var a0 := o + aim_dir * 14.0
+		var a1 := o + aim_dir * laser_len
+		draw_line(a0, a1, Color(1.0, 0.15, 0.1, 0.10), 3.0)
+		draw_line(a0, a1, Color(1.0, 0.25, 0.15, 0.45), 1.0)
+		draw_circle(a1, 1.6, Color(1.0, 0.35, 0.25, 0.9))
 	var perp := aim_dir.orthogonal()
 	# 持槍的手臂（與身體朝向分離，指向瞄準方向）
 	var hand := o + aim_dir * 8.0

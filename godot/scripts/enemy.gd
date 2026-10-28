@@ -31,6 +31,7 @@ var sprite: Sprite2D
 var display_name := "混混"
 
 var kb_vel := Vector2.ZERO
+var hurtbox: Area2D
 var stun := 0.0
 var hit_t := 0.0
 
@@ -52,6 +53,19 @@ func _ready() -> void:
 	sprite.vframes = 4
 	sprite.offset = Vector2(0, -12)
 	add_child(sprite)
+	# 受擊框：整個身體（比腳底碰撞圈大很多），子彈打這個
+	hurtbox = Area2D.new()
+	hurtbox.collision_layer = 32
+	hurtbox.collision_mask = 0
+	hurtbox.monitoring = false
+	var hs := CollisionShape2D.new()
+	var hr := RectangleShape2D.new()
+	var hb: Array = Balance.d["feel"]["hurtbox"]
+	hr.size = Vector2(float(hb[0]), float(hb[1]))
+	hs.shape = hr
+	hs.position = Vector2(0, -hr.size.y / 2.0 + 1.0)
+	hurtbox.add_child(hs)
+	add_child(hurtbox)
 	home_pos = global_position
 	home_facing = facing
 	t_alive = randf() * 10.0
@@ -98,6 +112,10 @@ func hear(pos: Vector2, _radius: float, _source: String) -> void:
 # ------------------------------------------------------------------ 主迴圈
 func _physics_process(delta: float) -> void:
 	if dead:
+		if kb_vel.length() > 4.0:
+			velocity = kb_vel
+			move_and_slide()
+			kb_vel = kb_vel.move_toward(Vector2.ZERO, 900.0 * delta)
 		return
 	t_alive += delta
 	attack_cd = maxf(0.0, attack_cd - delta)
@@ -283,10 +301,11 @@ func take_damage(amount: float, _from_pos: Vector2 = Vector2.ZERO, silent := fal
 	if pl != null and not silent:
 		pl.hit_marker = 1.0
 		pl.kill_marker = hp <= 0.0
-		pl.add_trauma(0.12 if hp > 0.0 else 0.22)
-		Sfx.play("stab", -7.0, 1.5)
+		pl.add_trauma(0.14 if hp > 0.0 else 0.3)
+		Sfx.play("hit" if hp > 0.0 else "kill", -2.0, randf_range(0.92, 1.08))
+		GameState.hitstop(float(F["hitstop_hit"]) if hp > 0.0 else float(F["hitstop_kill"]))
+	kb_vel = push * float(F["knockback"]) * (1.0 if hp > 0.0 else 1.5)
 	if hp > 0.0:
-		kb_vel = push * float(F["knockback"])
 		stun = float(F["stun"])
 	if hp <= 0.0:
 		_die(silent)
@@ -299,9 +318,11 @@ func take_damage(amount: float, _from_pos: Vector2 = Vector2.ZERO, silent := fal
 func _die(silent: bool) -> void:
 	dead = true
 	state = S.DEAD
+	if hurtbox != null:
+		hurtbox.collision_layer = 0
 	remove_from_group("hearing")
 	collision_layer = 0
-	collision_mask = 0
+	collision_mask = 1
 	if not silent:
 		GameState.stats["kills_loud"] += 1
 	sprite.rotation = deg_to_rad(90)

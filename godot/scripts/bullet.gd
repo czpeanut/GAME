@@ -15,8 +15,10 @@ func _physics_process(delta: float) -> void:
 	var from := global_position
 	var step := speed * delta
 	var to := from + dir * step
-	var q := PhysicsRayQueryParameters2D.create(from, to, 1 | 4)   # 世界 + 敵人
+	var q := PhysicsRayQueryParameters2D.create(from, to, 1 | 32)   # 世界 + 敵人受擊框
 	q.collide_with_bodies = true
+	q.collide_with_areas = true
+	q.hit_from_inside = true
 	var hit := get_world_2d().direct_space_state.intersect_ray(q)
 	trail.append(from)
 	if trail.size() > 3:
@@ -24,6 +26,8 @@ func _physics_process(delta: float) -> void:
 	if not hit.is_empty():
 		global_position = hit["position"]
 		var c: Object = hit["collider"]
+		if c is Area2D:
+			c = (c as Area2D).get_parent()
 		if c != null and c.has_method("take_damage"):
 			c.take_damage(damage, global_position - dir * 4.0, false)
 		elif GameState.fx != null:
@@ -38,6 +42,7 @@ func _physics_process(delta: float) -> void:
 
 func _draw() -> void:
 	# 曳光：拖尾細線＋亮頭
-	draw_line(-dir * 16.0, Vector2.ZERO, Color(1.0, 0.7, 0.3, 0.35), 3.0)
-	draw_line(-dir * 14.0, Vector2.ZERO, Color(1.0, 0.92, 0.6, 0.95), 1.0)
+	var tl := minf(28.0, travelled)
+	draw_line(-dir * tl, Vector2.ZERO, Color(1.0, 0.7, 0.3, 0.35), 3.0)
+	draw_line(-dir * tl, Vector2.ZERO, Color(1.0, 0.92, 0.6, 0.95), 1.0)
 	draw_circle(Vector2.ZERO, 1.4, Color(1, 0.98, 0.85))

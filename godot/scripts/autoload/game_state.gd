@@ -8,6 +8,8 @@ signal dialogue_requested(lines: Array, portrait: String, done: Callable)
 var player: Node2D = null
 var level: Node2D = null
 var fx: Node = null
+var hitstop_enabled := true
+var _hitstop_until := 0
 var in_dialogue := false
 var game_over := false
 var won := false
@@ -79,3 +81,17 @@ func _setup_input() -> void:
 		var m := InputEventMouseButton.new()
 		m.button_index = mice[action]
 		InputMap.action_add_event(action, m)
+
+
+## 命中停頓（hit-stop）：短暫放慢整個遊戲，讓命中有「頓」的手感。
+func hitstop(sec: float) -> void:
+	if not hitstop_enabled or sec <= 0.0:
+		return
+	var until := Time.get_ticks_msec() + int(sec * 1000.0)
+	if until <= _hitstop_until:
+		return
+	_hitstop_until = until
+	Engine.time_scale = 0.05
+	get_tree().create_timer(sec, true, false, true).timeout.connect(func():
+		if Time.get_ticks_msec() >= _hitstop_until:
+			Engine.time_scale = 1.0)

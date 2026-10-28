@@ -236,7 +236,20 @@ def noise(d, lp=None):
     if lp:
         k = int(lp); n = np.convolve(n, np.ones(k)/k, mode="same")
     return n
-t = t_(.45); write("shot", (noise(.45)*np.exp(-t*14)*.9 + np.sin(2*np.pi*70*t)*np.exp(-t*18)*.8)*.9)
+# 槍聲：尖銳爆音（crack）＋中頻主體＋低頻悶響（boom）＋尾音，壓縮後拉滿音量
+t = t_(.55)
+crack = noise(.55) * np.exp(-t * 160) * 1.4
+body = noise(.55, 3) * np.exp(-t * 22) * 1.0
+boom = np.sin(2*np.pi*(62 - 25*t)*t) * np.exp(-t * 9) * 1.1
+tail = noise(.55, 12) * np.exp(-t * 4.5) * .25
+x = crack + body + boom + tail
+x = np.tanh(x * 2.2); x = x / np.max(np.abs(x)) * .97
+write("shot", x)
+# 命中：短促悶擊（thwack）；擊殺：更低更重
+t = t_(.16); x = noise(.16, 4) * np.exp(-t * 38) * .9 + np.sin(2*np.pi*(190 - 300*t)*t) * np.exp(-t * 30) * .9
+write("hit", np.tanh(x * 2.0) * .95)
+t = t_(.3); x = noise(.3, 5) * np.exp(-t * 18) * .8 + np.sin(2*np.pi*(120 - 120*t)*t) * np.exp(-t * 14) * 1.0
+write("kill", np.tanh(x * 2.0) * .95)
 t = t_(.05); write("click", np.sign(np.sin(2*np.pi*900*t))*np.exp(-t*90)*.5)
 t = t_(.07); write("step", noise(.07, 6)*np.exp(-t*45)*.6)
 t = t_(.04); write("step_soft", noise(.04, 10)*np.exp(-t*50)*.35)

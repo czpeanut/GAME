@@ -4,7 +4,7 @@ var streams := {}
 var pool: Array[AudioStreamPlayer] = []
 
 func _ready() -> void:
-	for n in ["shot", "click", "step", "step_soft", "rack", "stab", "glass", "blip", "hurt", "pry"]:
+	for n in ["shot", "click", "step", "step_soft", "rack", "stab", "glass", "blip", "hurt", "pry", "hit", "kill"]:
 		var p := "res://assets/audio/%s.wav" % n
 		if ResourceLoader.exists(p):
 			streams[n] = load(p)

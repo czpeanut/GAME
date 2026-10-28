@@ -25,6 +25,7 @@ func _ready() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
+	GameState.hitstop_enabled = false
 	print("== 槍械機率（統計）==")
 	_test_gun()
 	print("== 載入關卡 ==")
@@ -43,6 +44,7 @@ func _run() -> void:
 	await _test_jam_clear()
 	await _test_ads_and_move_penalty()
 	await _test_feel()
+	await _test_helldivers_mode()
 	await _test_doors_and_rescue()
 	print("")
 	print("結果：%d 通過、%d 失敗" % [passes, fails])
@@ -207,6 +209,10 @@ func _test_backstab_and_melee() -> void:
 	GameState.stats["kills_silent"] = 0
 	# 正面：只造成 12 傷害，不致死
 	thug.hp = 60.0
+	thug.state = Enemy.S.IDLE
+	thug.alert = 0.0
+	thug.sweep_deg = 0.0
+	thug.facing = Vector2.LEFT
 	player.global_position = thug.global_position + Vector2(-14, 0)
 	player.test_aim = Vector2.RIGHT
 	await frames(2)
@@ -305,6 +311,7 @@ func _test_ads_and_move_penalty() -> void:
 	check("退行（180°）降到 back_mult：%.2f" % m_back, absf(m_back - float(Balance.d["player"]["aim_penalty"]["back_mult"])) < 0.001)
 	# 實際移動距離：前進 vs 退行
 	player.test_aim = Vector2.RIGHT
+	player.force_aim = true
 	player.global_position = Vector2(8 * 16, 43 * 16)
 	await frames(2)
 	var x0 := player.global_position.x
@@ -319,7 +326,8 @@ func _test_ads_and_move_penalty() -> void:
 	await frames(30)
 	Input.action_release("move_left")
 	var d_back := x0 - player.global_position.x
-	check("同樣 30 幀，退行距離約為前進的 70%%（前進 %.1f／退行 %.1f）" % [d_fwd, d_back], d_back < d_fwd * 0.88 and d_back > d_fwd * 0.55)
+	player.force_aim = false
+	check("舉槍時同樣 30 幀，退行距離約為前進的 75%%（前進 %.1f／退行 %.1f）" % [d_fwd, d_back], d_back < d_fwd * 0.9 and d_back > d_fwd * 0.6)
 	# 準星：按住瞄準後散布逐步縮小，開槍後膨脹
 	await frames(60)
 	var hip := player.current_spread
@@ -331,12 +339,12 @@ func _test_ads_and_move_penalty() -> void:
 	player.gun.jam = Gun.Jam.NONE
 	player.gun.rust = false
 	player.fire_cd = 0.0
-	player.try_fire()
+	var fr := _fire_once()
 	await frames(2)
-	check("開槍後準星膨脹", player.current_spread > aimed + 0.01)
+	check("開槍後準星膨脹", player.current_spread > aimed + 0.01, "r=%d spread=%.4f aimed=%.4f busy=%s bloom=%.2f" % [fr, player.current_spread, aimed, player.busy_kind, player.bloom])
 	player.force_aim = false
-	await frames(20)
-	check("放開右鍵後瞄準度回落", player.aim_progress < 0.5)
+	await frames(60)
+	check("放開右鍵、開槍後的舉槍時間結束，瞄準度回落", player.aim_progress < 0.5)
 	# 瞄準時射程加長
 	player.force_aim = true
 	player.aim_progress = 1.0
@@ -396,7 +404,72 @@ func _test_feel() -> void:
 	player.fire_cd = 0.0
 	player.global_position = Vector2(8 * 16, 43 * 16)
 	await frames(2)
-	player.try_fire()
+	_fire_once()
 	check("開槍產生鏡頭震動與後座", player.trauma > 0.1 and player.kick_v.length() > 1.0)
 	var has_casing: bool = GameState.fx.ps.any(func(p): return p["k"] == "casing")
 	check("開槍彈出彈殼", has_casing)
+
+func _test_helldivers_mode() -> void:
+	player.test_aim = null
+	player.force_aim = false
+	player.raise_t = 0.0
+	player.global_position = Vector2(8 * 16, 43 * 16)
+	await frames(3)
+	# 不舉槍：身體朝移動方向
+	Input.action_press("move_down")
+	await frames(30)
+	Input.action_release("move_down")
+	check("不舉槍時身體轉向移動方向（aim_dir=%s）" % str(player.aim_dir), player.aim_dir.dot(Vector2.DOWN) > 0.9)
+	await frames(20)
+	# 舉槍：移動變慢、不能跑
+	player.force_aim = true
+	await frames(2)
+	Input.action_press("move_right")
+	Input.action_press("sprint")
+	await frames(30)
+	var v_aim := player.velocity.length()
+	Input.action_release("move_right")
+	Input.action_release("sprint")
+	check("舉槍時不能跑、移動變慢（%.0f px/s）" % v_aim, not player.sprinting and v_aim < float(Balance.d["player"]["walk"]) * 0.75)
+	player.force_aim = false
+	await frames(30)
+	# 貼身射擊：敵人緊貼也打得到
+	player.test_aim = Vector2.RIGHT
+	var e := level._spawn_enemy("thug", Vector2i(12, 43), Vector2.LEFT, 0.0, "貼身")
+	level.enemies.append(e)
+	e.state = Enemy.S.IDLE
+	player.global_position = e.global_position + Vector2(-7, 0)
+	await frames(3)
+	player.gun.mag = 15
+	player.gun.jam = Gun.Jam.NONE
+	player.gun.rust = false
+	player.fire_cd = 0.0
+	player.force_aim = true
+	player.aim_progress = 1.0
+	var hp0 := e.hp
+	player.try_fire()
+	await frames(3)
+	check("敵人貼身 7px 仍可命中（hp %.0f → %.0f）" % [hp0, e.hp], e.hp < hp0 or e.dead)
+	# 受擊框夠大：射擊頭部高度（腳底上方 20px）也算命中
+	var e2 := level._spawn_enemy("thug", Vector2i(12, 46), Vector2.LEFT, 0.0, "頭")
+	level.enemies.append(e2)
+	await frames(2)
+	var q := PhysicsRayQueryParameters2D.create(e2.global_position + Vector2(-60, -20), e2.global_position + Vector2(60, -20), 32)
+	q.collide_with_areas = true
+	q.collide_with_bodies = false
+	var hit := player.get_world_2d().direct_space_state.intersect_ray(q)
+	check("受擊框涵蓋整個身體（頭部高度可命中）", not hit.is_empty())
+	player.force_aim = false
+	player.aim_progress = 0.0
+
+## 開一槍；遇到隨機卡彈（基礎 2%）就排除後重試，避免測試偶發失敗。
+func _fire_once() -> int:
+	var r := Gun.Result.BUSY
+	for i in 10:
+		player.gun.jam = Gun.Jam.NONE
+		player.busy_kind = ""
+		player.fire_cd = 0.0
+		r = player.try_fire()
+		if r == Gun.Result.FIRED:
+			return r
+	return r
