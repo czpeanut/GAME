@@ -35,6 +35,7 @@ func _ready() -> void:
 	actors.add_child(player)
 	player.died.connect(_on_died)
 	_apply_cam_limits()
+	add_child(Fx.new())
 	add_child(DustMotes.new())
 	hud = Hud.new()
 	add_child(hud)

@@ -30,6 +30,10 @@ var t_alive := 0.0
 var sprite: Sprite2D
 var display_name := "混混"
 
+var kb_vel := Vector2.ZERO
+var stun := 0.0
+var hit_t := 0.0
+
 func _ready() -> void:
 	add_to_group("enemies")
 	add_to_group("hearing")
@@ -98,6 +102,14 @@ func _physics_process(delta: float) -> void:
 	t_alive += delta
 	attack_cd = maxf(0.0, attack_cd - delta)
 	flash = maxf(0.0, flash - delta * 5.0)
+	hit_t = maxf(0.0, hit_t - delta)
+	if stun > 0.0 or kb_vel.length() > 4.0:
+		stun = maxf(0.0, stun - delta)
+		velocity = kb_vel
+		move_and_slide()
+		kb_vel = kb_vel.move_toward(Vector2.ZERO, 700.0 * delta)
+		_animate(delta)
+		return
 	var E: Dictionary = Balance.d["enemy"]
 	var sees := _sees_player()
 	var p: Node2D = GameState.player
@@ -251,7 +263,10 @@ func _animate(delta: float) -> void:
 	else:
 		row = 0 if facing.y > 0 else 1
 	sprite.frame = row * 3 + (1 + int(anim_t) % 2 if moving else 0)
-	sprite.modulate = Color(1.5, 0.8, 0.8) if flash > 0.0 and state == S.CHASE and attack_t > 0.0 else Color.WHITE
+	if hit_t > 0.0:
+		sprite.modulate = Color(2.6, 2.6, 2.6)
+	else:
+		sprite.modulate = Color(1.5, 0.8, 0.8) if flash > 0.0 and state == S.CHASE and attack_t > 0.0 else Color.WHITE
 	queue_redraw()
 
 # ------------------------------------------------------------------ 受傷／死亡
@@ -259,7 +274,20 @@ func take_damage(amount: float, _from_pos: Vector2 = Vector2.ZERO, silent := fal
 	if dead:
 		return
 	hp -= amount
-	sprite.modulate = Color(2, 1.2, 1.2)
+	hit_t = 0.09
+	var F: Dictionary = Balance.d["feel"]
+	var push := (global_position + Vector2(0, -8) - _from_pos).normalized() if _from_pos != Vector2.ZERO else Vector2.ZERO
+	if GameState.fx != null and not silent:
+		GameState.fx.blood(global_position + Vector2(0, -8), push, 10 if hp <= 0.0 else 6)
+	var pl := GameState.player as Player
+	if pl != null and not silent:
+		pl.hit_marker = 1.0
+		pl.kill_marker = hp <= 0.0
+		pl.add_trauma(0.12 if hp > 0.0 else 0.22)
+		Sfx.play("stab", -7.0, 1.5)
+	if hp > 0.0:
+		kb_vel = push * float(F["knockback"])
+		stun = float(F["stun"])
 	if hp <= 0.0:
 		_die(silent)
 		return

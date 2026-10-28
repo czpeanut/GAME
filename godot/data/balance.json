@@ -1,11 +1,12 @@
 {
   "_note": "所有數值集中於此，之後可由試算表匯出覆蓋。距離單位為像素（1 格 = 16 px）。",
   "player": {
-    "hp": 100, "walk": 70, "sprint": 118, "crouch": 36,
+    "hp": 100, "walk": 80, "sprint": 128, "crouch": 40, "accel": 1100, "friction": 1500,
     "stamina_max": 3.0, "stamina_regen": 1.2, "stamina_cooldown": 0.8,
     "step_walk": 0.46, "step_sprint": 0.30, "step_crouch": 0.62,
     "_aim_penalty": "移動方向與瞄準方向夾角超過 free_deg 後開始減速，正後方退行降到 back_mult 倍",
-    "aim_penalty": { "free_deg": 25, "back_mult": 0.6 }
+    "aim_penalty": { "free_deg": 25, "back_mult": 0.7 },
+    "roll": { "time": 0.28, "speed": 210, "cost": 1.0, "cooldown": 0.55, "noise": 56 }
   },
   "noise": {
     "walk": 40, "sprint": 112, "crouch": 0, "glass": 192, "glass_crouch_mult": 0.5,
@@ -16,17 +17,20 @@
   "gun": {
     "name": "T65K2", "mag_size": 15, "cram_size": 20,
     "start_mag": 15, "start_reserve": 30,
-    "fire_delay": 0.18, "damage": 35, "bullet_speed": 720, "bullet_range": 520,
+    "fire_delay": 0.14, "damage": 35, "bullet_speed": 900, "bullet_range": 520,
     "jam": { "base": 0.02, "rust": 0.12, "overload": 0.60 },
     "aim": {
-      "_note": "右鍵瞄準：準星由 spread_max 緩縮到 spread_min（單位：度，半角）",
-      "ramp_time": 1.1, "release_speed": 3.5,
-      "spread_max_deg": 9.0, "spread_min_deg": 0.6, "move_spread_deg": 4.0,
-      "bloom_per_shot_deg": 3.0, "bloom_recover_deg": 10.0, "bloom_cap_deg": 7.0,
-      "aimed_range_mult": 1.25
+      "_note": "手感參考 Helldivers 初代：瞄準幾乎即時；站定會自動收斂；單位：度（半角）",
+      "ramp_time": 0.4, "release_speed": 6.0,
+      "spread_max_deg": 6.0, "spread_min_deg": 0.4, "move_spread_deg": 3.0,
+      "settle_time": 0.25, "settle_mult": 0.6, "crouch_mult": 0.7,
+      "bloom_per_shot_deg": 1.6, "bloom_recover_deg": 14.0, "bloom_cap_deg": 5.0,
+      "aimed_range_mult": 1.25,
+      "kick_px": 3.0, "shake": 0.16
     },
     "clear_time": 1.0, "reload_time": 1.4, "cram_time": 2.0, "unload_time": 0.8
   },
+  "feel": { "cam_lead": 0.22, "cam_lead_aim": 0.4, "cam_lead_max": 70, "cam_lead_max_aim": 110, "knockback": 130, "stun": 0.12 },
   "melee": { "name": "絕緣一字螺絲起子", "range": 26, "damage": 12, "cooldown": 0.5, "backstab_dot": 0.2 },
   "enemy": {
     "hp": 60, "walk": 38, "chase": 80,

@@ -19,13 +19,15 @@ func _physics_process(delta: float) -> void:
 	q.collide_with_bodies = true
 	var hit := get_world_2d().direct_space_state.intersect_ray(q)
 	trail.append(from)
-	if trail.size() > 4:
+	if trail.size() > 3:
 		trail.pop_front()
 	if not hit.is_empty():
 		global_position = hit["position"]
 		var c: Object = hit["collider"]
 		if c != null and c.has_method("take_damage"):
 			c.take_damage(damage, global_position - dir * 4.0, false)
+		elif GameState.fx != null:
+			GameState.fx.sparks(global_position, -dir, 6)
 		queue_free()
 		return
 	global_position = to
@@ -35,7 +37,7 @@ func _physics_process(delta: float) -> void:
 	queue_redraw()
 
 func _draw() -> void:
-	for i in trail.size():
-		var p := trail[i] - global_position
-		draw_line(p, Vector2.ZERO, Color(1.0, 0.9, 0.55, 0.9), 1.0)
-	draw_circle(Vector2.ZERO, 1.2, Color(1, 0.95, 0.7))
+	# 曳光：拖尾細線＋亮頭
+	draw_line(-dir * 16.0, Vector2.ZERO, Color(1.0, 0.7, 0.3, 0.35), 3.0)
+	draw_line(-dir * 14.0, Vector2.ZERO, Color(1.0, 0.92, 0.6, 0.95), 1.0)
+	draw_circle(Vector2.ZERO, 1.4, Color(1, 0.98, 0.85))

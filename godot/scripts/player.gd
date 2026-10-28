@@ -36,6 +36,16 @@ var bloom := 0.0                      # 開槍後的準星膨脹（度）
 var current_spread := 0.15            # 目前半角散布（弧度）
 var force_aim := false                # 測試用：視為按住瞄準
 var aim_locked_played := false
+var trauma := 0.0                     # 鏡頭震動
+var cam_lead := Vector2.ZERO          # 鏡頭往準星方向前推
+var kick_v := Vector2.ZERO            # 開槍後座（鏡頭）
+var hit_marker := 0.0
+var kill_marker := false
+var roll_t := 0.0
+var roll_total := 0.28
+var roll_cd := 0.0
+var roll_dir := Vector2.RIGHT
+var still_t := 0.0                    # 站定秒數（準星自動收斂）
 var move_mult := 1.0                  # 移動方向與瞄準方向不同造成的減速倍率
 
 var sprite: Sprite2D
@@ -115,6 +125,7 @@ func _physics_process(delta: float) -> void:
 	aim_dir = _aim_vector()
 	_update_facing()
 	_update_timers(delta)
+	_update_camera(delta)
 	if GameState.in_dialogue:
 		velocity = Vector2.ZERO
 		_animate(delta, false)
@@ -142,7 +153,15 @@ func _update_aim(delta: float) -> void:
 	bloom = maxf(0.0, bloom - delta * float(A["bloom_recover_deg"]))
 	var mx := float(A["spread_max_deg"])
 	var mn := float(A["spread_min_deg"])
-	var deg := lerpf(mx, mn, aim_progress) + bloom
+	if velocity.length() > 8.0 or roll_t > 0.0:
+		still_t = 0.0
+	else:
+		still_t += delta
+	var settle := lerpf(1.0, float(A["settle_mult"]), clampf(still_t / float(A["settle_time"]), 0.0, 1.0))
+	var base := lerpf(mx, mn, aim_progress) * settle
+	if crouching:
+		base *= float(A["crouch_mult"])
+	var deg := base + bloom
 	if velocity.length() > 5.0:
 		deg += float(A["move_spread_deg"])
 	current_spread = deg_to_rad(clampf(deg, mn, mx + float(A["bloom_cap_deg"])))
@@ -156,7 +175,27 @@ func _update_lights() -> void:
 	cone_n.energy = 1.45 * on * aim_progress
 	flash_light.position = Vector2(0, -10) + aim_dir * 12.0
 	flash_light.energy = muzzle_flash * 2.2
-	cam.offset = -aim_dir * 2.5 * muzzle_flash
+
+func add_trauma(a: float) -> void:
+	trauma = minf(1.0, trauma + a)
+
+func _update_camera(delta: float) -> void:
+	var F: Dictionary = Balance.d["feel"]
+	var lead := Vector2.ZERO
+	if not GameState.in_dialogue:
+		var to: Vector2
+		if test_aim is Vector2:
+			to = (test_aim as Vector2).normalized() * 90.0
+		else:
+			to = get_global_mouse_position() - (global_position + Vector2(0, -10))
+		var k := lerpf(float(F["cam_lead"]), float(F["cam_lead_aim"]), aim_progress)
+		var mx := lerpf(float(F["cam_lead_max"]), float(F["cam_lead_max_aim"]), aim_progress)
+		lead = (to * k).limit_length(mx)
+	cam_lead = cam_lead.lerp(lead, 1.0 - exp(-9.0 * delta))
+	kick_v = kick_v * exp(-14.0 * delta)
+	trauma = maxf(0.0, trauma - delta * 1.8)
+	var sh := Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * trauma * trauma * 9.0
+	cam.offset = cam_lead + kick_v + sh
 
 func aim_move_mult(dir: Vector2, aim: Vector2) -> float:
 	## 移動方向與瞄準方向夾角越大越慢：夾角 <= free_deg 不受影響，180° 退行為 back_mult。
@@ -176,6 +215,10 @@ func _update_timers(delta: float) -> void:
 	muzzle_flash = maxf(0.0, muzzle_flash - delta * 9.0)
 	stab_flash = maxf(0.0, stab_flash - delta * 6.0)
 	hurt_flash = maxf(0.0, hurt_flash - delta * 4.0)
+	hit_marker = maxf(0.0, hit_marker - delta * 5.0)
+	roll_cd = maxf(0.0, roll_cd - delta)
+	if roll_t > 0.0:
+		roll_t = maxf(0.0, roll_t - delta)
 	if busy_kind != "":
 		busy_t -= delta
 		if busy_t <= 0.0:
@@ -215,10 +258,16 @@ func _handle_move(delta: float) -> void:
 	collision_mask = 1 | 16 | (0 if (crouching or in_shutter) else 8)
 	move_mult = aim_move_mult(dir, aim_dir)
 	speed *= move_mult
-	velocity = dir * speed
+	if roll_t > 0.0:
+		var pr := 1.0 - roll_t / maxf(roll_total, 0.01)
+		velocity = roll_dir * float(P["roll"]["speed"]) * (1.0 - 0.55 * pr)
+	else:
+		var target := dir * speed
+		var rate := float(P["accel"]) if dir != Vector2.ZERO else float(P["friction"])
+		velocity = velocity.move_toward(target, rate * delta)
 	move_and_slide()
 	var moving := dir != Vector2.ZERO and velocity.length() > 5.0
-	if moving:
+	if moving and roll_t <= 0.0:
 		_footsteps(delta, in_shutter)
 	else:
 		step_t = 0.0
@@ -253,13 +302,24 @@ func _animate(delta: float, moving: bool) -> void:
 	if moving:
 		f = 1 + (int(anim_t) % 2)
 	sprite.frame = facing_row * 3 + f
-	sprite.scale = Vector2(1, 0.82) if crouching else Vector2.ONE
-	sprite.offset = Vector2(0, -12 if not crouching else -10)
+	if roll_t > 0.0:
+		var pr := 1.0 - roll_t / maxf(roll_total, 0.01)
+		sprite.position = Vector2(0, -8)
+		sprite.offset = Vector2.ZERO
+		sprite.rotation = pr * TAU * (1.0 if roll_dir.x >= 0.0 else -1.0) * 1.0
+		sprite.scale = Vector2(1, 0.8)
+	else:
+		sprite.position = Vector2.ZERO
+		sprite.rotation = 0.0
+		sprite.scale = Vector2(1, 0.82) if crouching else Vector2.ONE
+		sprite.offset = Vector2(0, -12 if not crouching else -10)
 	sprite.modulate = Color(1, 0.55, 0.55) if hurt_flash > 0.0 else Color.WHITE
 	queue_redraw()
 
 # ------------------------------------------------------------------ 動作
 func _handle_actions(delta: float) -> void:
+	if Input.is_action_just_pressed("roll"):
+		try_roll()
 	if Input.is_action_pressed("fire"):
 		try_fire()
 	if Input.is_action_just_pressed("melee"):
@@ -269,8 +329,25 @@ func _handle_actions(delta: float) -> void:
 	if Input.is_action_just_pressed("cram"):
 		try_cram()
 
+func try_roll() -> void:
+	var R: Dictionary = Balance.d["player"]["roll"]
+	if roll_t > 0.0 or roll_cd > 0.0 or busy_kind != "" or stamina < float(R["cost"]):
+		return
+	var dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	if dir == Vector2.ZERO:
+		dir = aim_dir
+	roll_dir = dir.normalized()
+	roll_total = float(R["time"])
+	roll_t = roll_total
+	roll_cd = float(R["cooldown"])
+	stamina -= float(R["cost"])
+	aim_progress = 0.0
+	Sfx.play("step", -2.0, 0.7)
+	Acoustics.make(global_position, float(R["noise"]), "roll")
+	add_trauma(0.08)
+
 func try_fire() -> int:
-	if busy_kind != "" or fire_cd > 0.0:
+	if busy_kind != "" or fire_cd > 0.0 or roll_t > 0.0:
 		return Gun.Result.BUSY
 	aim_dir = _aim_vector()
 	var G: Dictionary = Balance.d["gun"]
@@ -291,6 +368,12 @@ func try_fire() -> int:
 			root.add_child(b)
 			muzzle_flash = 1.0
 			bloom += float(G["aim"]["bloom_per_shot_deg"])
+			kick_v -= aim_dir * float(G["aim"]["kick_px"])
+			add_trauma(float(G["aim"]["shake"]))
+			if GameState.fx != null:
+				var mz := global_position + Vector2(0, -10) + aim_dir * 14.0
+				GameState.fx.casing(global_position + Vector2(0, -12) + aim_dir * 4.0, aim_dir)
+				GameState.fx.smoke(mz, aim_dir)
 			Sfx.play("shot")
 			Acoustics.make(global_position, float(Balance.d["noise"]["gunshot"]), "gunshot")
 		Gun.Result.JAMMED:
@@ -355,7 +438,7 @@ func busy_ratio() -> float:
 	return 1.0 - clampf(busy_t / maxf(busy_total, 0.01), 0.0, 1.0)
 
 func try_melee() -> void:
-	if melee_cd > 0.0 or busy_kind != "":
+	if melee_cd > 0.0 or busy_kind != "" or roll_t > 0.0:
 		return
 	aim_dir = _aim_vector()
 	var M: Dictionary = Balance.d["melee"]
@@ -422,8 +505,11 @@ func _handle_interact(delta: float) -> void:
 		best.interact(self)
 
 func take_damage(amount: float, from_pos: Vector2 = Vector2.ZERO) -> void:
-	if GameState.game_over:
+	if GameState.game_over or roll_t > 0.0:
 		return
+	add_trauma(0.5)
+	if GameState.fx != null:
+		GameState.fx.blood(global_position + Vector2(0, -10), (global_position - from_pos).normalized() if from_pos != Vector2.ZERO else Vector2.DOWN, 6)
 	hp -= amount
 	hurt_flash = 1.0
 	GameState.stats["damage_taken"] += int(amount)
@@ -440,6 +526,8 @@ func _draw() -> void:
 	# 腳下陰影
 	draw_circle(Vector2(0, -1), 5.0, Color(0, 0, 0, 0.28))
 	var o := Vector2(0, -10)
+	if roll_t > 0.0:
+		return
 	var perp := aim_dir.orthogonal()
 	# 持槍的手臂（與身體朝向分離，指向瞄準方向）
 	var hand := o + aim_dir * 8.0

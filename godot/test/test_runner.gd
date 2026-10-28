@@ -42,6 +42,7 @@ func _run() -> void:
 	await _test_gunfight()
 	await _test_jam_clear()
 	await _test_ads_and_move_penalty()
+	await _test_feel()
 	await _test_doors_and_rescue()
 	print("")
 	print("結果：%d 通過、%d 失敗" % [passes, fails])
@@ -318,7 +319,7 @@ func _test_ads_and_move_penalty() -> void:
 	await frames(30)
 	Input.action_release("move_left")
 	var d_back := x0 - player.global_position.x
-	check("同樣 30 幀，退行距離約為前進的 60%%（前進 %.1f／退行 %.1f）" % [d_fwd, d_back], d_back < d_fwd * 0.72 and d_back > d_fwd * 0.5)
+	check("同樣 30 幀，退行距離約為前進的 70%%（前進 %.1f／退行 %.1f）" % [d_fwd, d_back], d_back < d_fwd * 0.88 and d_back > d_fwd * 0.55)
 	# 準星：按住瞄準後散布逐步縮小，開槍後膨脹
 	await frames(60)
 	var hip := player.current_spread
@@ -342,3 +343,60 @@ func _test_ads_and_move_penalty() -> void:
 	check("瞄準射程為腰射的 1.25 倍", absf(lerpf(1.0, float(Balance.d["gun"]["aim"]["aimed_range_mult"]), player.aim_progress) - 1.25) < 0.001)
 	player.force_aim = false
 	player.aim_progress = 0.0
+
+func _test_feel() -> void:
+	player.force_aim = false
+	player.hp = 100.0
+	player.stamina = 3.0
+	player.roll_cd = 0.0
+	player.test_aim = Vector2.RIGHT
+	player.global_position = Vector2(8 * 16, 43 * 16)
+	await frames(3)
+	# 加速度：起步第一幀不會直接達到全速
+	Input.action_press("move_right")
+	await frames(2)
+	var v_early := player.velocity.x
+	await frames(20)
+	var v_full := player.velocity.x
+	Input.action_release("move_right")
+	check("起步有加速感（早期 %.0f < 全速 %.0f）" % [v_early, v_full], v_early < v_full * 0.9 and v_full > 70.0)
+	await frames(4)
+	check("放開後有減速滑行（速度 %.0f）" % player.velocity.x, player.velocity.x < v_full)
+	await frames(30)
+	# 翻滾
+	player.global_position = Vector2(8 * 16, 43 * 16)
+	await frames(3)
+	var st0 := player.stamina
+	var x0 := player.global_position.x
+	player.try_roll()
+	check("翻滾耗體力 1 秒份", absf((st0 - player.stamina) - float(Balance.d["player"]["roll"]["cost"])) < 0.2, "%.2f -> %.2f" % [st0, player.stamina])
+	await frames(6)
+	player.take_damage(50.0, Vector2.ZERO)
+	check("翻滾無敵幀：不受傷", player.hp == 100.0)
+	await frames(20)
+	check("翻滾位移 > 25px（%.0f）" % (player.global_position.x - x0), player.global_position.x - x0 > 25.0)
+	player.try_roll()
+	check("翻滾冷卻中不可連滾", player.roll_t <= 0.0)
+	await frames(40)
+	# 命中回饋：擊退＋血花＋命中標記
+	var e := level._spawn_enemy("thug", Vector2i(40, 20), Vector2.DOWN, 0.0, "靶2")
+	level.enemies.append(e)
+	await frames(3)
+	var x_e := e.global_position.x
+	e.take_damage(10.0, e.global_position + Vector2(-8, 0))
+	check("被擊中會被擊退（kb %.0f）" % e.kb_vel.x, e.kb_vel.x > 50.0)
+	check("命中標記亮起", player.hit_marker > 0.5)
+	check("血花粒子產生", GameState.fx != null and GameState.fx.ps.size() > 0)
+	await frames(20)
+	check("敵人實際被推開（%.1f px）" % (e.global_position.x - x_e), e.global_position.x - x_e > 3.0)
+	# 開槍後座：鏡頭踢動、彈殼產生
+	player.gun.mag = 15
+	player.gun.jam = Gun.Jam.NONE
+	player.gun.rust = false
+	player.fire_cd = 0.0
+	player.global_position = Vector2(8 * 16, 43 * 16)
+	await frames(2)
+	player.try_fire()
+	check("開槍產生鏡頭震動與後座", player.trauma > 0.1 and player.kick_v.length() > 1.0)
+	var has_casing: bool = GameState.fx.ps.any(func(p): return p["k"] == "casing")
+	check("開槍彈出彈殼", has_casing)

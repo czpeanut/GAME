@@ -169,6 +169,12 @@ func _draw_reticle(p: Player) -> void:
 		canvas.draw_line(c + Vector2(r, 0), c + Vector2(r + 3, 0), col, 1.5)
 	canvas.draw_arc(pos, r, 0.0, TAU, 28, Color(accent, 0.3), 1.0)
 	canvas.draw_rect(Rect2(pos - Vector2(1, 1), Vector2(2, 2)), Color(1, 0.95, 0.76) if locked else Color(0.5, 0.83, 1.0))
+	if p.hit_marker > 0.0:
+		var hm := Color(1, 0.25, 0.2, p.hit_marker) if p.kill_marker else Color(1, 1, 1, p.hit_marker)
+		var e0 := 4.0 + (1.0 - p.hit_marker) * 3.0
+		var e1 := e0 + 4.0
+		for sg in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+			canvas.draw_line(pos + sg * e0, pos + sg * e1, hm, 1.5)
 	if aiming:
 		var gr := r + 7.0
 		canvas.draw_arc(pos, gr, -PI / 2.0, -PI / 2.0 + TAU * ap, 32, Color(accent, 0.9), 1.0)
