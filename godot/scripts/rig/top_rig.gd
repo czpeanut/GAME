@@ -50,6 +50,9 @@ func setup(v: String) -> void:
 		body.add_child(legs_root)
 		side_legs["far"] = _side_leg("far", Color(0.75, 0.75, 0.78), Vector2(-14, 0))
 		side_legs["near"] = _side_leg("near", Color.WHITE, Vector2(10, 0))
+		var shf: Array = meta["shF"]
+		armL = _tex_piece(DIR + "E_armF.png", origin, Vector2(shf[0], shf[1]))   # 遠側手臂（畫在身體後面）
+		body.add_child(armL)
 		upper = _tex_piece(DIR + "E_body.png", origin, origin)
 		body.add_child(upper)
 		var sh: Array = meta["shN"]
@@ -138,13 +141,13 @@ func pose(delta: float) -> void:
 		var sw: float = side[1]
 		if frontal:
 			arm.rotation = 0.0
-			arm.position = arm.get_meta("base") + Vector2(0, -sw * fwd.y * 6.0 * amp)
-			arm.scale = Vector2(1.0, 1.0 + sw * fwd.y * 0.05 * amp)
+			arm.position = arm.get_meta("base") + Vector2(0, -sw * fwd.y * 16.0 * amp)
+			arm.scale = Vector2(1.0, 1.0 + sw * fwd.y * 0.13 * amp)
 		else:
 			# 斜角：手臂沿前進方向前後平移，只加一點點旋轉（大角度旋轉會讓手往外甩）
-			arm.position = arm.get_meta("base") + fwd.normalized() * sw * 10.0 * amp
-			arm.rotation = -sw * signf(fwd.x) * 0.07 * amp
-			arm.scale = Vector2(1.0, 1.0 + sw * fwd.y * 0.04 * amp)
+			arm.position = arm.get_meta("base") + fwd.normalized() * sw * 26.0 * amp
+			arm.rotation = -sw * signf(fwd.x) * 0.16 * amp
+			arm.scale = Vector2(1.0, 1.0 + sw * fwd.y * 0.08 * amp)
 	upper.scale = Vector2(1.0, 1.0 + 0.006 * breath)
 
 func _pose_side(p: float, moving: bool, run: bool, bob: float, breath: float) -> void:
@@ -159,6 +162,8 @@ func _pose_side(p: float, moving: bool, run: bool, bob: float, breath: float) ->
 	side_legs["near"]["shin"].rotation = kn_n
 	side_legs["far"]["shin"].rotation = kn_f
 	# 近側手臂與近側腿反向（面向右：往前擺＝逆時針）
-	armR.rotation = (0.35 if not run else 0.6) * sin(p) if moving else 0.03 * breath
+	var swing := (0.5 if not run else 0.8) * sin(p) if moving else 0.03 * breath
+	armR.rotation = swing
+	armL.rotation = -swing * 0.9
 	upper.scale = Vector2(1.0, 1.0 + 0.006 * breath)
 	upper.rotation = deg_to_rad(4.0) if run else 0.0
