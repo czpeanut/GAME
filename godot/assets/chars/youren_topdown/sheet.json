@@ -1,0 +1,50 @@
+{
+ "frame_w": 36,
+ "frame_h": 72,
+ "anchor": [
+  18,
+  69
+ ],
+ "rows": [
+  {
+   "dir": "S",
+   "name": "walk",
+   "frames": 6
+  },
+  {
+   "dir": "SE",
+   "name": "walk",
+   "frames": 6
+  },
+  {
+   "dir": "E",
+   "name": "walk",
+   "frames": 6
+  },
+  {
+   "dir": "NE",
+   "name": "walk",
+   "frames": 6
+  },
+  {
+   "dir": "N",
+   "name": "walk",
+   "frames": 6
+  },
+  {
+   "dir": "NW",
+   "name": "walk",
+   "frames": 6
+  },
+  {
+   "dir": "W",
+   "name": "walk",
+   "frames": 6
+  },
+  {
+   "dir": "SW",
+   "name": "walk",
+   "frames": 6
+  }
+ ]
+}
