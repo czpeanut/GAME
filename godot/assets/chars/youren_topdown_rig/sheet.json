@@ -1,0 +1,126 @@
+{
+ "frame_w": 41,
+ "frame_h": 70,
+ "rows": [
+  {
+   "dir": "S",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "S",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "S",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "SE",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "SE",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "SE",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "E",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "E",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "E",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "NE",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "NE",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "NE",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "N",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "N",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "N",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "NW",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "NW",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "NW",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "W",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "W",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "W",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "SW",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "SW",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "SW",
+   "name": "run",
+   "frames": 8
+  }
+ ]
+}

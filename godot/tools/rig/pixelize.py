@@ -89,14 +89,14 @@ for rgb, a in small:
 
 fw, fh = frames[0].size
 if MAN:
-    MIRROR = {"E": "W", "SE": "SW", "NE": "NW"}
+    MIRROR = dict(x.split(":") for x in os.environ.get("PIX_MIRROR", "E:W,SE:SW,NE:NW").split(","))
     ORDER = ["S", "SE", "E", "NE", "N", "NW", "W", "SW"]
     by = {}
     for (v, act, k), fr in zip(MAN, frames):
         by.setdefault(v, {}).setdefault(act, []).append(fr)
     for d, srcv in MIRROR.items():
         by[d] = {act: [f.transpose(Image.FLIP_LEFT_RIGHT) for f in fl] for act, fl in by[srcv].items()}
-    acts = [a for a, _ in ACTIONS]
+    acts = [a for a, _ in ACTIONS if any(a in by[d] for d in by)]
     rows = [(d, act) for d in ORDER for act in acts if act in by[d]]
     maxn = max(len(by[d][act]) for d, act in rows)
     sheet = Image.new("RGBA", (fw * maxn, fh * len(rows)), (0, 0, 0, 0))
