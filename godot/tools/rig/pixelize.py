@@ -95,9 +95,10 @@ if MAN:
     for (v, act, k), fr in zip(MAN, frames):
         by.setdefault(v, {}).setdefault(act, []).append(fr)
     for d, srcv in MIRROR.items():
+        if srcv not in by: continue
         by[d] = {act: [f.transpose(Image.FLIP_LEFT_RIGHT) for f in fl] for act, fl in by[srcv].items()}
     acts = [a for a, _ in ACTIONS if any(a in by[d] for d in by)]
-    rows = [(d, act) for d in ORDER for act in acts if act in by[d]]
+    rows = [(d, act) for d in ORDER if d in by for act in acts if act in by[d]]
     maxn = max(len(by[d][act]) for d, act in rows)
     sheet = Image.new("RGBA", (fw * maxn, fh * len(rows)), (0, 0, 0, 0))
     meta = {"frame_w": fw, "frame_h": fh, "rows": []}
