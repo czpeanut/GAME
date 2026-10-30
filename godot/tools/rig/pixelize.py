@@ -7,9 +7,10 @@ import numpy as np
 from PIL import Image, ImageEnhance
 
 src, out, H, NCOL = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+MAN = json.load(open(sys.argv[5])) if len(sys.argv) > 5 else None
 os.makedirs(out, exist_ok=True)
 ACTIONS = [("idle", 4), ("walk", 8), ("run", 8), ("aim", 3), ("aim_walk", 8), ("roll", 8)]
-N = sum(n for _, n in ACTIONS)
+N = len(MAN) if MAN else sum(n for _, n in ACTIONS)
 files = sorted(glob.glob(os.path.join(src, "f*.png")))
 arrs = [np.array(Image.open(f).convert("RGB")) for f in files]
 # 找出第一個與第 0 格不同的畫格：前面重複的都是 idle 第 0 格
@@ -59,6 +60,7 @@ for rgb, al in keyed:
 pix = np.concatenate([s[0][s[1] > 0.5] for s in small]).astype(np.uint8)
 strip = Image.fromarray(pix.reshape(1, -1, 3))
 strip = ImageEnhance.Brightness(ImageEnhance.Contrast(strip).enhance(1.25)).enhance(1.12)
+strip = ImageEnhance.Color(strip).enhance(float(os.environ.get("PIX_SAT", "1.0")))
 pal_img = strip.quantize(colors=NCOL, method=Image.Quantize.MEDIANCUT)
 pal = np.array(pal_img.getpalette()[:NCOL * 3]).reshape(-1, 3)
 
@@ -66,6 +68,7 @@ frames = []
 for rgb, a in small:
     im = Image.fromarray(rgb.astype(np.uint8))
     im = ImageEnhance.Brightness(ImageEnhance.Contrast(im).enhance(1.25)).enhance(1.12)
+    im = ImageEnhance.Color(im).enhance(float(os.environ.get("PIX_SAT", "1.0")))
     q = np.array(im.quantize(palette=pal_img, dither=Image.Dither.NONE).convert("RGB"))
     mask = a > 0.5
     outa = np.zeros(mask.shape + (4,), np.uint8)
@@ -84,6 +87,28 @@ for rgb, a in small:
             edge |= nb
     frames.append(Image.fromarray(outa, "RGBA"))
 
+fw, fh = frames[0].size
+if MAN:
+    MIRROR = {"E": "W", "SE": "SW", "NE": "NW"}
+    ORDER = ["S", "SE", "E", "NE", "N", "NW", "W", "SW"]
+    by = {}
+    for (v, act, k), fr in zip(MAN, frames):
+        by.setdefault(v, {}).setdefault(act, []).append(fr)
+    for d, srcv in MIRROR.items():
+        by[d] = {act: [f.transpose(Image.FLIP_LEFT_RIGHT) for f in fl] for act, fl in by[srcv].items()}
+    acts = [a for a, _ in ACTIONS]
+    rows = [(d, act) for d in ORDER for act in acts if act in by[d]]
+    maxn = max(len(by[d][act]) for d, act in rows)
+    sheet = Image.new("RGBA", (fw * maxn, fh * len(rows)), (0, 0, 0, 0))
+    meta = {"frame_w": fw, "frame_h": fh, "rows": []}
+    for r, (d, act) in enumerate(rows):
+        for j, fr in enumerate(by[d][act]):
+            sheet.paste(fr, (j * fw, r * fh)); fr.save(os.path.join(out, f"{d}_{act}_{j}.png"))
+        meta["rows"].append({"dir": d, "name": act, "frames": len(by[d][act])})
+    sheet.save(os.path.join(out, "sheet.png"))
+    json.dump(meta, open(os.path.join(out, "sheet.json"), "w"), ensure_ascii=False, indent=1)
+    print("8dir frames", len(frames), "rows", len(rows), "size", fw, fh, "palette", NCOL, "start", start)
+    sys.exit(0)
 fw, fh = frames[0].size
 maxn = max(n for _, n in ACTIONS)
 sheet = Image.new("RGBA", (fw * maxn, fh * len(ACTIONS)), (0, 0, 0, 0))

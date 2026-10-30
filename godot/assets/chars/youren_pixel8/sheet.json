@@ -1,0 +1,216 @@
+{
+ "frame_w": 65,
+ "frame_h": 75,
+ "rows": [
+  {
+   "dir": "S",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "S",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "S",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "S",
+   "name": "aim",
+   "frames": 3
+  },
+  {
+   "dir": "S",
+   "name": "aim_walk",
+   "frames": 8
+  },
+  {
+   "dir": "SE",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "SE",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "SE",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "SE",
+   "name": "aim",
+   "frames": 3
+  },
+  {
+   "dir": "SE",
+   "name": "aim_walk",
+   "frames": 8
+  },
+  {
+   "dir": "E",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "E",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "E",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "E",
+   "name": "aim",
+   "frames": 3
+  },
+  {
+   "dir": "E",
+   "name": "aim_walk",
+   "frames": 8
+  },
+  {
+   "dir": "E",
+   "name": "roll",
+   "frames": 8
+  },
+  {
+   "dir": "NE",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "NE",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "NE",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "NE",
+   "name": "aim",
+   "frames": 3
+  },
+  {
+   "dir": "NE",
+   "name": "aim_walk",
+   "frames": 8
+  },
+  {
+   "dir": "N",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "N",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "N",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "N",
+   "name": "aim",
+   "frames": 3
+  },
+  {
+   "dir": "N",
+   "name": "aim_walk",
+   "frames": 8
+  },
+  {
+   "dir": "NW",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "NW",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "NW",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "NW",
+   "name": "aim",
+   "frames": 3
+  },
+  {
+   "dir": "NW",
+   "name": "aim_walk",
+   "frames": 8
+  },
+  {
+   "dir": "W",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "W",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "W",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "W",
+   "name": "aim",
+   "frames": 3
+  },
+  {
+   "dir": "W",
+   "name": "aim_walk",
+   "frames": 8
+  },
+  {
+   "dir": "W",
+   "name": "roll",
+   "frames": 8
+  },
+  {
+   "dir": "SW",
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "dir": "SW",
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "dir": "SW",
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "dir": "SW",
+   "name": "aim",
+   "frames": 3
+  },
+  {
+   "dir": "SW",
+   "name": "aim_walk",
+   "frames": 8
+  }
+ ]
+}

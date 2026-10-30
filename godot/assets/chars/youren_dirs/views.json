@@ -1,0 +1,94 @@
+{
+ "S": {
+  "size": [
+   515,
+   1366
+  ],
+  "hem": 700,
+  "split": 258,
+  "shL": [
+   118,
+   300
+  ],
+  "shR": [
+   398,
+   300
+  ],
+  "aim_size": [
+   494,
+   1365
+  ],
+  "aim_hem": 718,
+  "aim_crotch": 222,
+  "threeq": false
+ },
+ "SW": {
+  "size": [
+   475,
+   1364
+  ],
+  "hem": 705,
+  "split": 215,
+  "shL": [
+   110,
+   310
+  ],
+  "shR": [
+   350,
+   300
+  ],
+  "aim_size": [
+   721,
+   1364
+  ],
+  "aim_hem": 712,
+  "aim_crotch": 385,
+  "threeq": true
+ },
+ "NW": {
+  "size": [
+   479,
+   1364
+  ],
+  "hem": 690,
+  "split": 230,
+  "shL": [
+   112,
+   300
+  ],
+  "shR": [
+   360,
+   290
+  ],
+  "aim_size": [
+   566,
+   1362
+  ],
+  "aim_hem": 720,
+  "aim_crotch": 346,
+  "threeq": true
+ },
+ "N": {
+  "size": [
+   510,
+   1360
+  ],
+  "hem": 700,
+  "split": 255,
+  "shL": [
+   100,
+   290
+  ],
+  "shR": [
+   410,
+   290
+  ],
+  "aim_size": [
+   511,
+   1366
+  ],
+  "aim_hem": 704,
+  "aim_crotch": 190,
+  "threeq": false
+ }
+}
