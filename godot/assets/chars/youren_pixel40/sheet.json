@@ -1,0 +1,30 @@
+{
+ "frame_w": 41,
+ "frame_h": 47,
+ "rows": [
+  {
+   "name": "idle",
+   "frames": 4
+  },
+  {
+   "name": "walk",
+   "frames": 8
+  },
+  {
+   "name": "run",
+   "frames": 8
+  },
+  {
+   "name": "aim",
+   "frames": 3
+  },
+  {
+   "name": "aim_walk",
+   "frames": 8
+  },
+  {
+   "name": "roll",
+   "frames": 8
+  }
+ ]
+}
