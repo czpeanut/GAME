@@ -7,16 +7,16 @@ const DIR := "res://assets/chars/youren_side/"
 
 # 各零件的關節點（零件圖內的像素座標）
 const P := {
-	"torso_hip": Vector2(200, 470), "torso_neck": Vector2(222, 42), "torso_sh_near": Vector2(228, 120), "torso_sh_far": Vector2(250, 118),
+	"torso_hip": Vector2(200, 470), "torso_neck": Vector2(200, 72), "torso_sh_near": Vector2(228, 120), "torso_sh_far": Vector2(250, 118),
 	"head_neck": Vector2(132, 292),
 	"thigh_near": Vector2(107, 40), "thigh_far": Vector2(121, 40),
 	"knee": 262.0, "shin_top": 32.0,
 	"upper": Vector2(76, 38), "elbow": 330.0, "fore_top": 26.0,
-	"aim_sh": Vector2(786, 74),
+	"aim_hip": Vector2(1127, 904),
 }
 const LEG_SCALE := 1.32
 const ARM_SCALE := 1.22
-const AIM_SCALE := 1.25
+const AIM_SCALE := 0.69     # 舉槍全身圖（腰部以上）與零件的比例
 
 var anim := "idle"
 var t := 0.0
@@ -47,20 +47,21 @@ func _ready() -> void:
 	var far_mod := Color(0.72, 0.72, 0.76)
 	# 繪製順序：遠側手臂 → 遠側腿 → 近側腿 → 軀幹 → 頭 → 近側手臂 → 瞄準手臂
 	arms["far"] = _make_arm("far", far_mod)
-	legs["far"] = _make_leg("far", far_mod, Vector2(4, 8))
-	legs["near"] = _make_leg("near", Color.WHITE, Vector2(-8, 8))
+	legs["far"] = _make_leg("far", far_mod, Vector2(-10, 22))
+	legs["near"] = _make_leg("near", Color.WHITE, Vector2(-20, 22))
 	torso = _part("torso", P["torso_hip"])
 	body.add_child(torso)
 	head = _part("head", P["head_neck"])
 	head.position = P["torso_neck"] - P["torso_hip"]
+	head.show_behind_parent = true     # 脖子收進領口後方
 	torso.add_child(head)
 	arms["near"] = _make_arm("near", Color.WHITE)
 	torso.add_child(arms["near"]["upper"])
 	arms["near"]["upper"].position = P["torso_sh_near"] - P["torso_hip"]
-	aim_node = _part("aim", P["aim_sh"])
+	# 舉槍姿勢：AI 生成的完整舉槍上半身（手臂與肩膀本來就連在一起），以髖部為軸轉動調整仰角
+	aim_node = _part("aim_body", P["aim_hip"])
 	aim_node.scale = Vector2(AIM_SCALE, AIM_SCALE)
-	aim_node.position = P["torso_sh_near"] - P["torso_hip"] + Vector2(10, 6)
-	torso.add_child(aim_node)
+	body.add_child(aim_node)
 	aim_node.visible = false
 
 func _make_leg(side: String, m: Color, off: Vector2) -> Dictionary:
@@ -162,7 +163,7 @@ func _apply_limbs(th_n: float, th_f: float, kn_n: float, kn_f: float, ar_n: floa
 	# 遠側手臂掛在 body 上：位置跟著肩膀
 	arms["far"]["upper"].position = (P["torso_sh_far"] - P["torso_hip"]).rotated(lean)
 	aim_node.visible = show_aim
-	arms["near"]["upper"].visible = not show_aim
+	torso.visible = not show_aim
 	arms["far"]["upper"].visible = not show_aim
 	if show_aim:
-		aim_node.rotation = -lean + aim_angle
+		aim_node.rotation = lean + aim_angle

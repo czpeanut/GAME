@@ -65,7 +65,7 @@ func _process(delta: float) -> void:
 		small.t = 0.0
 	for r in [big, small]:
 		r.anim = cur[0]
-		r.aim_angle = deg_to_rad(18.0) * sin(seg_t * 2.2) if cur[0] == "aim" else 0.0
+		r.aim_angle = deg_to_rad(14.0) * sin(seg_t * 2.2) if cur[0] == "aim" else 0.0
 		r.pose(delta)
 	label.text = "陳佑任｜骨架動畫測試（Gemini 生成零件）\n動作：" + String(cur[2])
 	queue_redraw()
